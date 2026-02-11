@@ -1,0 +1,24 @@
+# --- Backup folder entirely ---
+back-up/
+
+# --- Any database files (Zotero or Better BibTeX copies) ---
+*.sqlite
+
+# --- Exported results (CSV/JSON) ---
+*.csv
+*.json
+
+# --- Python & Jupyter Cache ---
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# --- Environments ---
+venv/
+.env
+
+# --- OS Stuff ---
+.DS_Store
+Thumbs.db
