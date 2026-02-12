@@ -215,3 +215,77 @@ class Button_app_actions(Button):
             pygame.draw.rect(window, 'black', self.draw_box[0], self.lin_w)
 
         window.blit(self.text_blit[0], self.text_blit_pos[0])
+
+class Inidication:
+    """
+    class to render color fields.
+
+    Parameters
+    ----------
+    box : list
+        Four values : x, y up-left corner position and width, height values.
+    colors : list
+        RGB color.
+
+    """
+    def __init__(self, box, color):
+        self.box = box
+        self.color = color
+
+    def draw(self, window:pygame.surface.Surface) -> None:
+        """
+        Renders the fields.
+
+        Parameters
+        ----------
+        window : pygame.surface.Surface
+            Pygame surface object where buttons are draw.
+
+        """
+        pygame.draw.rect(window, self.color, self.box)
+
+class Text:
+    """
+    Render text class.
+
+    Parameters
+    ----------
+    x : int | float
+        X axis center text position.
+    y : int | float
+        Y axis center text position.
+    text : str
+        Text to render.
+    font : pygame.font.SysFont
+        Font to use for rendering.
+
+    """
+    def __init__(self,
+                 x:list,
+                 y:list,
+                 text:list,
+                 font:pygame.font.SysFont) -> None:
+
+        self.x = x
+        self.y = y
+        self.text = text
+        self.font = font
+        self.text_blit = []
+        self.text_pos = []
+        for i in range(len(self.x)):
+            self.text_blit.append(self.font.render(self.text[i], 1, 'black'))
+            self.text_pos.append([self.x[i]-self.text_blit[i].get_width()/2,
+                                  self.y[i]-self.text_blit[i].get_height()/2])
+
+    def draw(self, window:pygame.surface.Surface) -> None:
+        """
+        Renders the text.
+
+        Parameters
+        ----------
+        window : pygame.surface.Surface
+            Pygame surface object where buttons are draw.
+
+        """
+        for i in range(len(self.text)):
+            window.blit(self.text_blit[i], self.text_pos[i])

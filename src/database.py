@@ -12,7 +12,7 @@ from pathlib import Path
 from unidecode import unidecode
 
 # Object to manage the buttons
-from buttons import Button_selection, Button_app_actions
+from buttons import Button_selection, Button_app_actions, Text, Inidication
 
 pygame.init()
 
@@ -24,16 +24,56 @@ class DataGest:
         - Management of the application state and buttons.
 
     """
-    
-    # font to use
-    TEXT_FONT = pygame.font.SysFont('Arial', 20)
-    TITLE_FONT = pygame.font.SysFont('Arial', 30, bold=True)
+
+    # To resize the window, modify this SCALE factor
+    SCALE = 1.1
+
+    # Frame Per Seconds
+    FPS = 60
+
+    # Colors
+    bg_color = (245, 245, 213)  # Cream background
+    bt_color = (180, 180, 180)  # Grey for buttons/panels
 
     def __init__(self):
+        # Window size
+        self.WIDTH  = 1200 * self.SCALE
+        self.HEIGHT =  700 * self.SCALE
+
+        # font to use
+        self.TEXT_FONT  = pygame.font.SysFont(
+            'Arial', max([1, int(20*self.SCALE)]))
+
+        self.TITLE_FONT = pygame.font.SysFont(
+            'Arial', max([1, int(30*self.SCALE)]), bold=True)
+
+        # --- G/UI Constants ---
+        self.mx_tx_y     =  23        # Max number of lines visible in
+        #                               comparison panel
+        self.text_height =  30 *self.SCALE # Vertical space for each line of
+        #                                    text
+        self.TXT_LEN = [380*self.SCALE, 385*self.SCALE] # text lenght limits
+        self.COMP_LINES  = [785*self.SCALE, 790*self.SCALE,
+                            800*self.SCALE] # comparison pannel limits
+        self.COMP_TX_X   = [405*self.SCALE, 795*self.SCALE] # x comparison 
+        #                                                     text position
+        self.COMP_TX_DY  = 5*self.SCALE # y offset comparison text
+        # Comparison feilds x midle line division
+        self.DIVIDERS = 790*self.SCALE
+
+        # white empty box
+        self.box_tx = [400*self.SCALE, 0, 800*self.SCALE, self.HEIGHT]
+
+        # Current Y position of the scrollbar thumb
+        self.fscroll = [1180*self.SCALE, 0, 20*self.SCALE, self.HEIGHT]
+        self.bscroll = [1181*self.SCALE, max([1, 3 * self.SCALE]),
+                          18*self.SCALE, 692 * self.SCALE]
+
         # --- Gestion de l'État ---
         self.state = 'IDLE'  # IDLE, LOADING, COMPUTING, ERROR, etc.
         self.error_type = '' # For the error type gestion
-        self.comp_st = 0  # Compilation state (0: vide, 1: chargé, 2: compilé)
+        self.comp_st = 0     # Compilation state (0: empty, 1: loaded,
+        #                       2: compiled)
 
         # --- Paths and files ---
         self.from_path = '' # origin path of the databse
@@ -42,7 +82,7 @@ class DataGest:
         # --- Data structur ---
         self.data = {}          # raw Zotero tables
         self.data_cite_key = {} # Better-BibTeX citation keys
-        self.one_loaded = False # if a database is loaded
+        self.one_loaded = False # True if db has been successfully loaded
 
         self.papers = {}      # Indexed by Citation Key
         self.authors = {}     # Indexed par first and last name
@@ -72,29 +112,35 @@ class DataGest:
         # --- Comparison results ---
         self.liste1 = [] # 1st list of the last / first name comparison
         self.liste2 = [] # 2nd list of the last / first name comparison
-        self.light = []  # if the line is white or grey
+        self.light  = [] # if the line is white or grey
 
         # --- Buttons initialisation ---
         # Database loading button
         self.load_db_bt = Button_app_actions(
-            x_start=np.array([825]), x_stop=np.array([1125]),
-            y_start=np.array([50]), y_stop=np.array([90]),
+            x_start=np.array([ 25]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([ 50]) * self.SCALE,
+            y_stop =np.array([ 90]) * self.SCALE,
             text=np.array(['(Re)Load database']),
             font=self.TEXT_FONT, lin_w=3,
             target='load_db_manager', bt_color=self.bt_color)
 
         # Database compile button
         self.compile_db_bt = Button_app_actions(
-            x_start=np.array([825]), x_stop=np.array([1125]),
-            y_start=np.array([100]), y_stop=np.array([140]),
+            x_start=np.array([ 25]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([100]) * self.SCALE,
+            y_stop =np.array([140]) * self.SCALE,
             text=np.array(['Compile the database']),
             font=self.TEXT_FONT, lin_w=3,
             target='compile_database', bt_color=self.bt_color)
 
         # How the authors will be compared buttons
         self.comparaison_bt = Button_selection(
-            x_start=np.array([850, 1050]), x_stop=np.array([950, 1150]),
-            y_start=np.array([180,  180]), y_stop=np.array([220,  220]),
+            x_start=np.array([ 45, 245]) * self.SCALE,
+            x_stop =np.array([155, 355]) * self.SCALE,
+            y_start=np.array([180, 180]) * self.SCALE,
+            y_stop =np.array([220, 220]) * self.SCALE,
             text=np.array(['Last name', 'First name']),
             font=self.TEXT_FONT, lin_w=3, target='to_compare',
             values=np.array(['lastname', 'firstname']),
@@ -102,10 +148,10 @@ class DataGest:
 
         # Filter on the date of the documents addition buttons
         self.time_filter_bt = Button_selection(
-            x_start=np.array([840, 1040, 840, 1040]),
-            x_stop =np.array([960, 1160, 960, 1160]),
-            y_start=np.array([255,  255, 305,  305]),
-            y_stop =np.array([295,  295, 345,  345]),
+            x_start=np.array([ 40, 240,  40, 240]) * self.SCALE,
+            x_stop =np.array([160, 360, 160, 360]) * self.SCALE,
+            y_start=np.array([255, 255, 305, 305]) * self.SCALE,
+            y_stop =np.array([295, 295, 345, 345]) * self.SCALE,
             text=np.array(['Today', '-1 week', '-1 month', '-1 year']),
             font=self.TEXT_FONT, lin_w=3, target='to_filter',
             values=np.array(['today', 'tod-1w', 'tod-1m', 'tod-1y']),
@@ -113,8 +159,10 @@ class DataGest:
 
         # If the abbreviation are used to filter button
         self.abbreviation_bt = Button_selection(
-            x_start=np.array([840]), x_stop=np.array([960]),
-            y_start=np.array([355]), y_stop=np.array([395]),
+            x_start=np.array([ 40]) * self.SCALE,
+            x_stop =np.array([160]) * self.SCALE,
+            y_start=np.array([355]) * self.SCALE,
+            y_stop =np.array([395]) * self.SCALE,
             text=np.array(['Abreviation']), font=self.TEXT_FONT, lin_w=3,
             target='filter_abv', values=np.array([True]),
             empty_sel=np.array([False]),
@@ -122,16 +170,20 @@ class DataGest:
 
         # If the "special" letters are used or not (é -> e) button
         self.special_letter_bt = Button_selection(
-            x_start=np.array([1040]), x_stop=np.array([1160]),
-            y_start=np.array([ 355]), y_stop=np.array([ 395]),
+            x_start=np.array([240]) * self.SCALE,
+            x_stop =np.array([360]) * self.SCALE,
+            y_start=np.array([355]) * self.SCALE,
+            y_stop =np.array([395]) * self.SCALE,
             text=np.array(['Special']), font=self.TEXT_FONT, lin_w=3,
             target='use_special', values=np.array([True]),
             empty_sel=np.array([False]), colors=[(20, 250, 75), (255, 0, 0)])
 
         # If Better bibtex citation keys are displayed button
         self.add_keys_bt = Button_selection(
-            x_start=np.array([875]), x_stop=np.array([1125]),
-            y_start=np.array([405]), y_stop=np.array([ 445]),
+            x_start=np.array([ 75]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([405]) * self.SCALE,
+            y_stop =np.array([445]) * self.SCALE,
             text=np.array(['Display the citation key']),
             font=self.TEXT_FONT, lin_w=3, target='add_key',
             values=np.array([True]), empty_sel=np.array([False]),
@@ -139,30 +191,38 @@ class DataGest:
 
         # Compare first/last name of the authors button
         self.show_computed_bt = Button_app_actions(
-            x_start=np.array([875]), x_stop=np.array([1125]),
-            y_start=np.array([470]), y_stop=np.array([ 510]),
+            x_start=np.array([ 75]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([470]) * self.SCALE,
+            y_stop =np.array([510]) * self.SCALE,
             text=np.array(['Show']), font=self.TEXT_FONT, lin_w=3,
             target='compute_show', bt_color=self.bt_color)
 
         # To reset parameters button
         self.reset_param_bt = Button_app_actions(
-            x_start=np.array([875]), x_stop=np.array([1125]),
-            y_start=np.array([520]), y_stop=np.array([ 560]),
+            x_start=np.array([ 75]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([520]) * self.SCALE,
+            y_stop =np.array([560]) * self.SCALE,
             text=np.array(['Reset']), font=self.TEXT_FONT,
             lin_w=3, target='reinit', bt_color=self.bt_color)
 
         # To export the comparison between authors button
         self.export_comparaison_bt = Button_app_actions(
-            x_start=np.array([875]), x_stop=np.array([1125]),
-            y_start=np.array([570]), y_stop=np.array([ 610]),
+            x_start=np.array([ 75]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([570]) * self.SCALE,
+            y_stop =np.array([610]) * self.SCALE,
             text=np.array(['Export comparaison']),
             font=self.TEXT_FONT, lin_w=3,
             target='compute_export_show', bt_color=self.bt_color)
 
         # To export the database into a json file button
         self.export_db_json_bt = Button_app_actions(
-            x_start=np.array([875]), x_stop=np.array([1125]),
-            y_start=np.array([630]), y_stop=np.array([ 670]),
+            x_start=np.array([ 75]) * self.SCALE,
+            x_stop =np.array([325]) * self.SCALE,
+            y_start=np.array([630]) * self.SCALE,
+            y_stop =np.array([670]) * self.SCALE,
             text=np.array(['Export db as json']),
             font=self.TEXT_FONT, lin_w=3,
             target='export_jsonf', bt_color=self.bt_color)
@@ -174,6 +234,20 @@ class DataGest:
             self.add_keys_bt, self.show_computed_bt, self.reset_param_bt,
             self.export_comparaison_bt, self.export_db_json_bt]
 
+        # Text fields
+        self.title_txt = Text([200*self.SCALE]*4, np.array([20, 200, 275,
+            325])*self.SCALE, ['Manager', '/', '/', '/'], self.TITLE_FONT)
+
+        self.texte_txt = Text([200*self.SCALE]*2, np.array([165, 240]
+            )*self.SCALE, ['Compare by :', 'Filter by :'], self.TEXT_FONT)
+
+        # Loading state square
+        self.load_sq = Inidication([342.5*self.SCALE, 50*self.SCALE,
+                                    40*self.SCALE, 40*self.SCALE], [200,0,0])
+        # Compilation state square
+        self.comp_sq = Inidication([342.5*self.SCALE, 100*self.SCALE,
+                                    40*self.SCALE, 40*self.SCALE], [200,0,0])
+
         # --- Warning messages dictionaries ---
         self.waiting_messages = {
             'LOADING': 'Databases are being loaded...',
@@ -182,34 +256,35 @@ class DataGest:
             'EXPORTING': 'Database is being exported...'}
 
         # --- Error messages dictionaries ---
+        y_centers = (np.array([350, 400, 450, 500]) * self.SCALE).tolist()
         self.error_messages = {
          'no file': {'text':[
            'No database was found from the given access path, make',
             'sure you writte the correct path in the "main.ini" file.',
             'Given path:', str(self.from_path)],
-          'y_center':[350, 400, 450, 500]},
+          'y_center':y_centers},
 
          'no betbib': {'text':[
            'No Better-BibTex database was found from the given access path,',
            'make sure you writte the correct path in the "main.ini" file.',
            'Given path:', str(self.from_path)],
-          'y_center':[350, 400, 450, 500]},
+          'y_center':y_centers},
 
          'no database': {'text':[
            "No database has yet been imported, merged into one with:",
            "'(Re)Load database' before trying to compile."],
-          'y_center':[350, 400]},
+          'y_center':y_centers[:2]},
 
          'no compil': {'text':[
            "The loaded database has not yet been compiled. Compile it with:",
            "'Compile the database' before trying to use it."],
-          'y_center':[350, 400]},
+          'y_center':y_centers[:2]},
 
          'no compar': {
           'text':[
            "You need to choose how the authors will compare using the ",
            "buttons: 'Last name' / 'First name'."],
-          'y_center':[350, 400]}}
+          'y_center':y_centers[:2]}}
 
     def duplicate_table(self) -> None:
         """
@@ -280,7 +355,9 @@ class DataGest:
         self.data_cite_key = self.extract_valid_tables(path_data)
         self.data_cite_key = self.data_cite_key['citationkey']
         self.one_loaded = True
+        self.load_sq.color = [0, 200, 0]
         if self.comp_st == 2:
+            self.comp_sq.color = [242, 133, 0]
             self.comp_st = 1
 
     def treat_by_paper(self) -> None:
@@ -390,11 +467,11 @@ class DataGest:
 
                     self.authors[cle_aut]['dispkeys'] = [] 
                     tx = self.TEXT_FONT.render(keys[i], 1, 'black')
-                    if tx.get_width() < 385:
+                    if tx.get_width() < self.TXT_LEN[1]:
                         self.authors[cle_aut]['dispkeys'].append(keys[i])
                     else:
                         c = -1
-                        while tx.get_width() > 380:
+                        while tx.get_width() > self.TXT_LEN[0]:
                             tx = self.TEXT_FONT.render(keys[i][:c], 1,
                                                        'black')
                             c -= 1
@@ -411,11 +488,11 @@ class DataGest:
                     if keys[i] not in self.authors[cle_aut]['citekeys']:
                         self.authors[cle_aut]['citekeys'].append(keys[i])
                         tx = self.TEXT_FONT.render(keys[i], 1, 'black')
-                        if tx.get_width() < 385:
+                        if tx.get_width() < self.TXT_LEN[1]:
                             self.authors[cle_aut]['dispkeys'].append(keys[i])
                         else:
                             c = -1
-                            while tx.get_width() > 380:
+                            while tx.get_width() > self.TXT_LEN[0]:
                                 tx = self.TEXT_FONT.render(keys[i][:c], 1,
                                                            'black')
 
