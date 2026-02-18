@@ -69,10 +69,12 @@ python main.py
 ## How to use
 
 List order:
- - 1. Click **(Re)Load database** to copy and index your Zotero library.
- - 2. Select your comparison criteria (**Last Name** or **First Name**).
- - 3. Toggle **Special** to ignore accents or **Abreviation** to catch name variations.
- - 4. Click **Show** to view results or **Export** to save them for later.
+ 1. Click **(Re)Load database** to copy and index your Zotero library.
+ 2. Click **Compile the database** to extract the authors first and last name.
+ 3. Select your comparison algorithm.
+ 4. Set the parameters of the chosen algorithm in the **Settings Tab**.
+ 5. Set filters and the use of citation keys in the **Execution**.
+ 6. Click **Show** to view results or an **Export** button to save them for later.
 
 
 ## Important Note

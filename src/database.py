@@ -84,9 +84,10 @@ class DataGest:
         self.to_path = ''   # path where to copy the database
 
         # --- Data structur ---
-        self.data = {}          # raw Zotero tables
-        self.data_cite_key = {} # Better-BibTeX citation keys
-        self.one_loaded = False # True if db has been successfully loaded
+        self.data = {}             # raw Zotero tables
+        self.data_cite_key = {}    # Better-BibTeX citation keys
+        self.one_loaded = False    # True if db has been successfully loaded
+        self.use_zotero_db = False # Better-BibTex and zotero db has fused
 
         self.papers = {}      # Indexed by Citation Key
         self.authors = {}     # Indexed par first and last name
@@ -491,17 +492,19 @@ class DataGest:
                             self.to_path   / 'zotero.sqlite')
 
             if os.path.isfile(self.from_path / 'better-bibtex.sqlite'):
+                self.use_zotero_db = False
                 shutil.copyfile(self.from_path / 'better-bibtex.sqlite',
                                 self.to_path   / 'better-bibtex.sqlite')
 
 
             elif os.path.isfile(self.from_path / 'better-bibtex.migrated'):
+                self.use_zotero_db = False
                 shutil.copyfile(self.from_path / 'better-bibtex.migrated',
                                 self.to_path   / 'better-bibtex.migrated')
 
             else:
-                self.state = 'ERROR'
-                self.error_type = 'no betbib'
+                # if no better-bibtex db found => will use zotero db
+                self.use_zotero_db = True
 
         else:
             self.state = 'ERROR'
@@ -551,14 +554,38 @@ class DataGest:
         path_data = self.to_path / 'zotero.sqlite'
         self.data = self.extract_valid_tables(path_data)
 
-        # Extracts data from the Better BibTex database
-        if os.path.isfile(self.to_path / 'better-bibtex.sqlite'):
-            path_data = self.to_path / 'better-bibtex.sqlite'
-        elif os.path.isfile(self.to_path / 'better-bibtex.migrated'):
-            path_data = self.to_path / 'better-bibtex.migrated'
+        if False:#not self.use_zotero_db:
+            # Extracts data from the Better BibTex database
+            if os.path.isfile(self.to_path / 'better-bibtex.sqlite'):
+                path_data = self.to_path / 'better-bibtex.sqlite'
+            elif os.path.isfile(self.to_path / 'better-bibtex.migrated'):
+                path_data = self.to_path / 'better-bibtex.migrated'
         
-        self.data_cite_key = self.extract_valid_tables(path_data)
-        self.data_cite_key = self.data_cite_key['citationkey']
+            self.data_cite_key = self.extract_valid_tables(path_data)
+            self.data_cite_key = self.data_cite_key['citationkey'].loc[:,
+                ['citationKey', 'itemID', 'itemKey']]
+
+        else:
+            key_field_id = int(self.data['fields'].loc[
+                self.data['fields']['fieldName'] == 'citationKey',
+                'fieldID'].values[0])
+
+            self.data_cite_key = self.data['itemData'][
+                self.data['itemData']['fieldID'] == key_field_id
+                ].reset_index(drop=True)
+
+            self.data_cite_key = self.data_cite_key.merge(
+                self.data['itemDataValues'], on='valueID')
+
+            self.data_cite_key = self.data_cite_key.merge(
+                self.data['items'].loc[:, ['itemID', 'key']], on='itemID')
+
+            self.data_cite_key = self.data_cite_key.rename(
+                columns={'value':'citationKey', 'key':'itemKey'})
+
+            self.data_cite_key = self.data_cite_key.drop(columns=['fieldID',
+                                                                  'valueID'])
+
         self.one_loaded = True
         self.load_sq.color = [0, 200, 0]
         if self.comp_st == 2:
@@ -811,6 +838,14 @@ class DataGest:
             mask = (self.auth_len_first>0)&(self.auth_len_first[:, None]>0)
             mask_operations = mask_operations & mask[mask_square]
 
+        elif self.to_compare == 'bothname':
+            # Ignore the case if an author didn't give its first name (i.e.:
+            # organisations, anonymous, some indonesian authors...)
+            mask = (self.auth_len_last>0)&(self.auth_len_last[:, None]>0)
+            mask_operations = mask_operations & mask[mask_square]
+            mask = (self.auth_len_first>0)&(self.auth_len_first[:, None]>0)
+            mask_operations = mask_operations & mask[mask_square]
+
         if self.algo == 'Levenshtein' or self.algo == 'DamerauLevenshtein':
             # for Damerau-Levenshtein, I need to implement a safer parameter
             # due to transposition matrix test
@@ -1014,6 +1049,15 @@ class DataGest:
         """
         arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
         len1, len2 = len(arr_str_1), len(arr_str_2)
+        if len1 == 0 or len2 == 0:
+            print('')
+            print(string_1, string_2)
+            print(arr_str_1)
+            print(arr_str_2)
+            print('')
+            raise
+            return 1.0
+
         dist = np.zeros((len1+1, len2+1))
         dist[0] = np.arange(0, len2+1, 1)
         dist[:, 0] = np.arange(0, len1+1, 1)

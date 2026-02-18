@@ -2,6 +2,7 @@
 back-up/
 
 # --- Any database files (Zotero or Better BibTeX copies) ---
+src/main.ini
 *.sqlite
 *.migrated
 

@@ -2,7 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.0] - 2026-02-20
+## [0.4.0] - 2026-02-18
+### Added
+- Fix the abandonment of the use of the better-bibtex.sqlite file by the pluging. 
+
+### Known Issues
+- Author comparison logic needs further refinement for middle-name edge cases.
+- Add other comparison algorithms (i.e. Jaro-Winkler, Smith–Waterman, Cosine Similarity with text embedding, K-Means...).
+- Author comparison optimization for large database for distance matching (> 2,000 authors) and perfect matching (> 5,000).
+- Special characters strange behavior when unselected.
+- Scroll bar mouse interaction needed for faster scrolling.
+- Need a progression bar for long computation phases
+
+
+## [0.3.0] - 2026-02-18
 ### WARNING !
 Your Better BibTeX data may have been migrated to a new format!
 
