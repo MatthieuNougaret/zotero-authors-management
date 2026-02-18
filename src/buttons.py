@@ -7,8 +7,9 @@ pygame.init()
 
 class Button:
     """
-    General parent button class utilizing NumPy for vectorized state management.
-    This class can handle multiple visual instances (buttons) simultaneously.
+    General parent button class utilizing NumPy for vectorized state
+    management. This class can handle multiple visual instances
+    (buttons) simultaneously.
 
     Parameters
     ----------
@@ -134,7 +135,7 @@ class Button_selection(Button):
 
             # Update the application attribute using reflection (setattr)
             if np.any(self.selected):
-                setattr(app, self.target, str((self.values[self.selected])[0]))
+                setattr(app,self.target, str((self.values[self.selected])[0]))
             else:
                 setattr(app, self.target, self.empty_sel)
 
@@ -157,7 +158,8 @@ class Button_selection(Button):
 
             # Draw a black border if hovered
             if self.is_mouse_on[i]:
-                pygame.draw.rect(window, 'black', self.draw_box[i], self.lin_w)
+                pygame.draw.rect(window, 'black', self.draw_box[i],
+                                 self.lin_w)
 
             window.blit(self.text_blit[i], self.text_blit_pos[i])
 
@@ -219,12 +221,29 @@ class Button_app_actions(Button):
 
 class Button_keyboard(Button):
     """
-    Button .
+    Button class for interactive keyboard-input button for numerical data
+    entry within a Pygame application.
 
     Parameters
     ----------
-    :
-        .
+    x_start : numpy.ndarray
+        Vector with int or float of the starting x-coordinate of the button.
+    x_stop : numpy.ndarray
+        Vector with int or float of the ending x-coordinate of the button.
+    y_start : numpy.ndarray
+        Vector with int or float of the starting y-coordinate of the button.
+    y_stop : numpy.ndarray
+        Vector with int or float of the ending y-coordinate of the button.
+    text : numpy.ndarray
+        Vector with str of the initial text/value displayed on the button.
+    font : pygame.font.Font
+        The font object used to render the text.
+    lin_w : int
+        The line width for the button's border.
+    target : str
+        The identifier for the variable or setting this button modifies.
+    bounds : list
+        A list or tuple defining the [min, max] allowed numerical values.
 
     """
     def __init__(self, x_start, x_stop, y_start, y_stop, text, font, lin_w,
@@ -251,6 +270,17 @@ class Button_keyboard(Button):
                           self.y_start[0]+4, self.y_stop[0]-4]
 
     def test_errors(self, app) -> None:
+        """
+        Validates the current input against numerical rules and defined
+        bounds.
+
+        Parameters
+        ----------
+        app : object
+            The main application instance containing state and error_type
+            attributes.
+
+        """
         app.state = 'ERROR'
         if self.repre[0] == '':
             app.error_type = 'len0'
@@ -276,6 +306,10 @@ class Button_keyboard(Button):
             app.state = 'IDLE'
 
     def reloc_cursor(self) -> None:
+        """
+        Calculates and updates the visual position of the text cursor based on
+        the current character widths and cursor index.
+        """
         tot_len = []
         for c in self.repre:
             tx = self.font.render(c, 1, 'black')
@@ -285,6 +319,10 @@ class Button_keyboard(Button):
                              sum(tot_len[:self.cursor_idx]))
 
     def update_tx(self) -> None:
+        """
+        Synchronizes the internal string representation, re-renders the text
+        surface, and updates centering positions.
+        """
         self.reloc_cursor()
         if self.repre[0] == '':
             self.temp = ''
@@ -296,6 +334,16 @@ class Button_keyboard(Button):
                               self.center[1]-self.text_blit.get_height()/2]
 
     def transform_event_key(self, event:pygame.event.Event) -> None:
+        """
+        Processes keyboard events to modify the button's text (inserting
+        digits, handling backspace, or moving the cursor).
+
+        Parameters
+        ----------
+        event : pygame.event.Event
+            The keyboard event to be processed.
+
+        """
         if ((event.unicode == '.')|(event.unicode.isdigit()))&(
             len(self.repre) < 15):
 
@@ -359,16 +407,40 @@ class Button_keyboard(Button):
             pass
 
     def actions_click(self) -> None:
+        """
+        Handles mouse click logic to toggle the 'selected' state based on
+        whether the mouse is hovering over the button.
+        """
         if self.is_mouse_on:
             self.selected = not self.selected
         else:
             self.selected = False
 
     def actions_keyboard(self, event:pygame.event.Event) -> None:
+        """
+        Triggers text transformation logic if the button is currently
+        selected.
+
+        Parameters
+        ----------
+        event : pygame.event.Event
+            The keyboard event to be passed to the transformer.
+
+        """
         if self.selected:
             self.transform_event_key(event)
 
     def draw(self, window:pygame.surface.Surface) -> None:
+        """
+        Renders the button, text, and blinking cursor (if selected) to the
+        screen.
+
+        Parameters
+        ----------
+        window : pygame.surface.Surface
+            The surface on which the button should be drawn.
+
+        """
         pygame.draw.rect(window, 'white', self.draw_box)
         if self.is_mouse_on|self.selected:
             pygame.draw.rect(window, 'black', self.draw_box, self.lin_w)

@@ -553,7 +553,6 @@ class DataGest:
         # Extracts data from the Zotero database
         path_data = self.to_path / 'zotero.sqlite'
         self.data = self.extract_valid_tables(path_data)
-
         if not self.use_zotero_db:
             # Extracts data from the Better BibTex database
             if os.path.isfile(self.to_path / 'better-bibtex.sqlite'):
