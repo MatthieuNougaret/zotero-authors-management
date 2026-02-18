@@ -3,12 +3,14 @@ back-up/
 
 # --- Any database files (Zotero or Better BibTeX copies) ---
 *.sqlite
+*.migrated
 
 # --- Exported results (CSV/JSON) ---
 *.csv
 *.json
 
 # --- Python & Jupyter Cache ---
+Untitled.ipynb
 __pycache__/
 *.py[cod]
 *$py.class

@@ -216,6 +216,169 @@ class Button_app_actions(Button):
 
         window.blit(self.text_blit[0], self.text_blit_pos[0])
 
+
+class Button_keyboard(Button):
+    """
+    Button .
+
+    Parameters
+    ----------
+    :
+        .
+
+    """
+    def __init__(self, x_start, x_stop, y_start, y_stop, text, font, lin_w,
+                 target:str,
+                 bounds:list):
+
+        super().__init__(x_start, x_stop, y_start, y_stop, text, font, lin_w)
+
+        self.target = target
+        self.bounds = bounds
+
+        self.selected = False
+        self.temp = self.text
+        self.repre = np.array(list(self.text)).astype(object)
+        self.cursor_idx = len(self.repre)
+        self.center = self.center[0]
+        self.draw_box = self.draw_box[0]
+
+        self.text_blit = self.font.render(self.temp, 1, 'black')
+        self.text_blit_pos = [self.center[0]-self.text_blit.get_width()/2,
+                              self.center[1]-self.text_blit.get_height()/2]
+
+        self.xy_cursor = [self.text_blit_pos[0]+self.text_blit.get_width(),
+                          self.y_start[0]+4, self.y_stop[0]-4]
+
+    def test_errors(self, app) -> None:
+        app.state = 'ERROR'
+        if self.repre[0] == '':
+            app.error_type = 'len0'
+        elif np.sum(self.repre == '.') > 1:
+            app.error_type = 'nan'
+        elif self.repre[0] == '.':
+            app.error_type = 'st.'
+        elif len(self.repre) > self.bounds[1]:
+            if (self.repre[0] == '0')&(self.repre[1] != '.'):
+                app.error_type = '0n'
+            elif float(self.temp) > self.bounds[1]:
+                app.error_type = 'over'
+            elif float(self.temp) < self.bounds[0]:
+                app.error_type = 'under'
+            else:
+                app.state = 'IDLE'
+
+        elif float(self.temp) > self.bounds[1]:
+            app.error_type = 'over'
+        elif float(self.temp) < self.bounds[0]:
+            app.error_type = 'under'
+        else:
+            app.state = 'IDLE'
+
+    def reloc_cursor(self) -> None:
+        tot_len = []
+        for c in self.repre:
+            tx = self.font.render(c, 1, 'black')
+            tot_len += [tx.get_width()]
+
+        self.xy_cursor[0] = (self.center[0] - sum(tot_len) / 2 +
+                             sum(tot_len[:self.cursor_idx]))
+
+    def update_tx(self) -> None:
+        self.reloc_cursor()
+        if self.repre[0] == '':
+            self.temp = ''
+        else:
+            self.temp = np.sum(self.repre)
+
+        self.text_blit = self.font.render(self.temp, 1, 'black')
+        self.text_blit_pos = [self.center[0]-self.text_blit.get_width()/2,
+                              self.center[1]-self.text_blit.get_height()/2]
+
+    def transform_event_key(self, event:pygame.event.Event) -> None:
+        if ((event.unicode == '.')|(event.unicode.isdigit()))&(
+            len(self.repre) < 15):
+
+            if self.repre[0] != '':
+                nw_len = len(self.repre)+1
+                mask = np.ones(nw_len, dtype=bool)
+                mask[self.cursor_idx] = False
+                new_strings = np.array(['']*nw_len, dtype='<U2')
+                new_strings[mask] = self.repre
+                new_strings[self.cursor_idx] = event.unicode
+                self.repre = new_strings.astype(object)
+                self.cursor_idx += 1
+                self.update_tx()
+
+            else:
+                self.repre = np.array([event.unicode], dtype=object)
+                self.cursor_idx += 1
+                self.update_tx()
+
+        elif event.key == pygame.K_DELETE:
+            if self.cursor_idx < len(self.repre):
+                if len(self.repre) > 1:
+                    mask = np.ones(len(self.repre), dtype=bool)
+                    mask[self.cursor_idx] = False
+                    self.repre = self.repre[mask]
+                    self.update_tx()
+
+                else:
+                    self.repre = np.array([''], dtype=object)
+                    self.cursor_idx = 0
+                    self.update_tx()
+
+        elif event.key == pygame.K_BACKSPACE:
+            if self.cursor_idx > 0:
+                if len(self.repre) > 1:
+                    mask = np.ones(len(self.repre), dtype=bool)
+                    mask[self.cursor_idx-1] = False
+                    self.repre = self.repre[mask]
+                    self.cursor_idx -= 1
+                    self.update_tx()
+
+                else:
+                    self.repre = np.array([''], dtype=object)
+                    self.cursor_idx = 0
+                    self.update_tx()
+
+        elif event.key == pygame.K_RIGHT:
+            if self.cursor_idx < len(self.repre):
+                self.cursor_idx += 1
+                self.reloc_cursor()
+
+        elif event.key == pygame.K_LEFT:
+            if self.cursor_idx > 0:
+                self.cursor_idx -= 1
+                self.reloc_cursor()
+
+        elif event.key == pygame.K_ESCAPE:
+            self.sel_prop = False
+        else:
+            # other keys are not take into account
+            pass
+
+    def actions_click(self) -> None:
+        if self.is_mouse_on:
+            self.selected = not self.selected
+        else:
+            self.selected = False
+
+    def actions_keyboard(self, event:pygame.event.Event) -> None:
+        if self.selected:
+            self.transform_event_key(event)
+
+    def draw(self, window:pygame.surface.Surface) -> None:
+        pygame.draw.rect(window, 'white', self.draw_box)
+        if self.is_mouse_on|self.selected:
+            pygame.draw.rect(window, 'black', self.draw_box, self.lin_w)
+
+        window.blit(self.text_blit, self.text_blit_pos)
+        if self.selected&(time()%1 > 0.5):
+            pygame.draw.line(window, 'black', (self.xy_cursor[0],
+                self.xy_cursor[1]), (self.xy_cursor[0], self.xy_cursor[2]), 3)
+
+
 class Inidication:
     """
     class to render color fields.

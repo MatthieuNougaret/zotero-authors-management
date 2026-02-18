@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from time import time
 from pathlib import Path
+from buttons import Button_selection, Button_keyboard
 
 # Object to manage the database from duplicate to interaction
 from database import DataGest
@@ -53,6 +54,7 @@ class Manager(DataGest):
 
         # State Machine
         self.state = 'IDLE'
+        self.algo = None
         self.error_type = ''
 
         # Data structures
@@ -61,6 +63,11 @@ class Manager(DataGest):
         self.authors = {}
         self.auth_time = np.zeros(0)
         self.auth_abv = np.zeros(0)
+        self.auth_len_last  = np.zeros(0)
+        self.auth_len_first = np.zeros(0)
+        self.letters   = {'l':{}, 'f':{}}
+        self.bag_last  = np.zeros(0)
+        self.bag_first = np.zeros(0)
 
         self.to_compare = None
         self.to_filter = None
@@ -85,14 +92,34 @@ class Manager(DataGest):
         self.tod_1y = self.today-365
 
         # Reset button selection states
+        for button in self.data_buttons:
+            if type(button) == Button_selection:
+                button.selected[:] = False
+
+        for button in self.matching_bt:
+            if type(button) == Button_selection:
+                button.selected[:] = False
+
+        for button in self.levenshtein_bt:
+            if type(button) == Button_selection:
+                button.selected[:] = False
+            elif type(button) == Button_keyboard:
+                button.selected = False
+
+        for button in self.D_levenshtein_bt:
+            if type(button) == Button_selection:
+                button.selected[:] = False
+            elif type(button) == Button_keyboard:
+                button.selected = False
+
+        for button in self.execution_bt:
+            if type(button) == Button_selection:
+                button.selected[:] = False
+
         self.use_special = np.array([False])
         self.filter_abv = np.array([False])
         self.add_key = np.array([False])
-        self.comparaison_bt.selected[:] = False
-        self.time_filter_bt.selected[:] = False
-        self.abbreviation_bt.selected[:] = False
-        self.special_letter_bt.selected[:] = False
-        self.add_keys_bt.selected[:] = False
+        self.both_comp = 'AND'
 
         # Dynamic update of error message content
         self.error_messages['no file']['text'][3] = str(self.from_path)
@@ -110,8 +137,27 @@ class Manager(DataGest):
             self.m_text = False
 
         # Check interaction for all buttons in the control area
-        for button in self.all_buttons:
-            button.test_mouse(self.mouse_pos)
+        self.pannels_bt.test_mouse(self.mouse_pos)
+        if self.pannel == 'DATA':
+            for button in self.data_buttons:
+                button.test_mouse(self.mouse_pos)
+
+        elif self.pannel == 'SETTINGS':
+            if self.algo == 'Perfect':
+                for button in self.matching_bt:
+                    button.test_mouse(self.mouse_pos)
+
+            elif self.algo == 'Levenshtein':
+                for button in self.levenshtein_bt:
+                    button.test_mouse(self.mouse_pos)
+
+            elif self.algo == 'DamerauLevenshtein':
+                for button in self.D_levenshtein_bt:
+                    button.test_mouse(self.mouse_pos)
+
+        elif self.pannel == 'EXECUTION':
+            for button in self.execution_bt:
+                button.test_mouse(self.mouse_pos)
 
     def mouse_wheel(self, event:pygame.event.Event) -> None:
         """
@@ -203,6 +249,16 @@ class Manager(DataGest):
             self.state = 'ERROR'
             self.error_type = 'no compar'
 
+        elif self.algo == 'Levenshtein':
+            for button in self.levenshtein_bt:
+                if type(button) == Button_keyboard:
+                    button.test_errors(self)
+
+        elif self.algo == 'DamerauLevenshtein':
+            for button in self.D_levenshtein_bt:
+                if type(button) == Button_keyboard:
+                    button.test_errors(self)
+
     def compute_show(self) -> None:
         """
         Runs the comparison logic and calculates UI parameters for the
@@ -213,7 +269,17 @@ class Manager(DataGest):
             self.state = 'COMPARING'
             self.m_text = False
             self.draw()
-            self.comparison_by()
+            if self.algo == 'Levenshtein':
+                for button in self.levenshtein_bt:
+                    if type(button) == Button_keyboard:
+                        self.treshold = float(button.temp)
+
+            elif self.algo == 'DamerauLevenshtein':
+                for button in self.D_levenshtein_bt:
+                    if type(button) == Button_keyboard:
+                        self.treshold = float(button.temp)
+
+            self.comparison_matching()
             self.state = 'IDLE'
             self.tex_y = 0 # Reset scroll to top
             n_gene = len(self.liste1)
@@ -277,24 +343,104 @@ class Manager(DataGest):
             self.error_type = ''
 
         elif self.state == 'IDLE':
-            # Test all buttons actions
-            for button in self.all_buttons:
-                button.actions(self)
+            self.pannels_bt.actions(self)
+            if self.pannel == 'DATA':
+                for button in self.data_buttons:
+                    button.actions(self)
 
-    def draw__pannel(self) -> None:
-        self
+            elif self.pannel == 'SETTINGS':
+                if self.algo == 'Perfect':
+                    for button in self.matching_bt:
+                        button.actions(self)
 
-    def draw_main_interface(self) -> None:
+                elif self.algo == 'Levenshtein':
+                    for button in self.levenshtein_bt:
+                        if type(button) == Button_keyboard:
+                            button.actions_click()
+                        else:
+                            button.actions(self)
+
+                elif self.algo == 'DamerauLevenshtein':
+                    for button in self.D_levenshtein_bt:
+                        if type(button) == Button_keyboard:
+                            button.actions_click()
+                        else:
+                            button.actions(self)
+
+            elif self.pannel == 'EXECUTION':
+                for button in self.execution_bt:
+                    button.actions(self)
+
+    def gestion_keyboard(self, event:pygame.event.Event) -> None:
         """
-        Renders the static and dynamic parts of the main UI:
-        1. Comparison results (left panel)
-        2. Scrollbar (middle divider)
-        3. Control buttons and status indicators (right panel)
+        Function to handle interaction between keybord actions and the
+        selected keyboard button.
+
+        Parameters
+        ----------
+        event : pygame.event.Event
+            Pygame event beeing a keybord action.
+
         """
-        # --- LEFT PANEL: Results List ---
-        pygame.draw.rect(self.window, 'white', self.box_tx)
-        # Draw background highlights for "light" flagged entries
-        # Render the two strings to be compared side-by-side
+        if self.state == 'IDLE':
+            if self.pannel == 'SETTINGS':
+                if self.algo == 'Levenshtein':
+                    for button in self.levenshtein_bt:
+                        if type(button) == Button_keyboard:
+                            button.actions_keyboard(event)
+
+                elif self.algo == 'DamerauLevenshtein':
+                    for button in self.D_levenshtein_bt:
+                        if type(button) == Button_keyboard:
+                            button.actions_keyboard(event)
+
+    def draw_data_pannel(self) -> None:
+        """
+        Function to render the data gestion pannel. To load and compile the
+        databse and to choose the comparison algorithm.
+        """
+        # Load Status indicator
+        self.load_sq.draw(self.window)
+
+        # Compilation Status indicator
+        #     red: not compiled
+        #     orange: compiled database but a new one was imported
+        #     green: compiled and no new loaded
+        self.comp_sq.draw(self.window)
+        for button in self.data_buttons:
+            button.draw(self.window)
+
+    def draw_settings_pannel(self) -> None:
+        """
+        Function to render the settings pannel. To define algorithm settingd.
+        """
+        if self.algo == 'Perfect':
+            self.matching_txt.draw(self.window)
+            for button in self.matching_bt:
+                button.draw(self.window)
+
+        elif self.algo == 'Levenshtein':
+            self.levenshtein_txt.draw(self.window)
+            for button in self.levenshtein_bt:
+                button.draw(self.window)
+
+        elif self.algo == 'DamerauLevenshtein':
+            self.dam_lev_txt.draw(self.window)
+            for button in self.D_levenshtein_bt:
+                button.draw(self.window)
+
+    def draw_execution_pannel(self) -> None:
+        """
+        Function to render the buttons and text of the execution pannel.
+        """
+        self.execution_txt.draw(self.window)
+        for button in self.execution_bt:
+            button.draw(self.window)
+
+    def draw_comparisons(self) -> None:
+        """
+        Function to render the result of the author comparision.
+        """
         c = 0
         for i in range(self.tex_y, self.tex_y+self.delta_txy):
             if self.light[i]:
@@ -326,22 +472,53 @@ class Manager(DataGest):
         pygame.draw.line(self.window, (0, 0, 0), (self.DIVIDERS, 0),
                          (self.DIVIDERS, self.HEIGHT), 2)
 
-        # --- RIGHT PANEL: Controls ---
-        self.title_txt.draw(self.window)
-        self.texte_txt.draw(self.window)
+    def draw_main_interface(self) -> None:
+        """
+        Renders the static and dynamic parts of the main UI:
+        1. Comparison results (left panel)
+        2. Scrollbar (middle divider)
+        3. Control buttons and status indicators (right panel)
+        """
+        # --- RIGHT PANEL: Results List ---
+        pygame.draw.rect(self.window, 'white', self.box_tx)
+        # Draw background highlights for "light" flagged entries
+        # Render the two strings to be compared side-by-side
+        self.draw_comparisons()
 
-        # Load Status indicator
-        self.load_sq.draw(self.window)
+        # --- Controls pannels ---
+        # Tab buttons
+        self.pannels_bt.draw(self.window)
+        # Tab separation
+        pygame.draw.line(self.window, 'black', (self.pannels_bt.x_stop[0], 0),
+            (self.pannels_bt.x_stop[0], self.pannels_bt.y_stop[0]), 3)
 
-        # Compilation Status indicator
-        #     red: not compiled
-        #     orange: compiled database but a new one was imported
-        #     green: compiled and no new loaded
-        self.comp_sq.draw(self.window)
+        pygame.draw.line(self.window, 'black', (self.pannels_bt.x_stop[1], 0),
+            (self.pannels_bt.x_stop[1], self.pannels_bt.y_stop[1]), 3)
 
-        # Call individual draw methods for all button objects
-        for button in self.all_buttons:
-            button.draw(self.window)
+        if self.pannel == 'DATA':
+            pygame.draw.line(self.window, 'black',
+                (self.pannels_bt.x_stop[0], self.pannels_bt.y_stop[0]),
+                (self.pannels_bt.x_stop[2], self.pannels_bt.y_stop[2]), 3)
+
+            self.draw_data_pannel()
+
+        elif self.pannel == 'SETTINGS':
+            pygame.draw.line(self.window, 'black',
+                (self.pannels_bt.x_start[0], self.pannels_bt.y_stop[0]),
+                (self.pannels_bt.x_stop[0], self.pannels_bt.y_stop[0]), 3)
+
+            pygame.draw.line(self.window, 'black',
+                (self.pannels_bt.x_start[2], self.pannels_bt.y_stop[2]),
+                (self.pannels_bt.x_stop[2], self.pannels_bt.y_stop[2]), 3)
+
+            self.draw_settings_pannel()
+
+        elif self.pannel == 'EXECUTION':
+            pygame.draw.line(self.window, 'black',
+                (self.pannels_bt.x_start[0], self.pannels_bt.y_stop[0]),
+                (self.pannels_bt.x_stop[1], self.pannels_bt.y_stop[1]), 3)
+
+            self.draw_execution_pannel()
 
     def draw_text_msg(self, text:str, center_y:int) -> None:
         """
@@ -427,6 +604,9 @@ class Manager(DataGest):
     
                 if event.type == pygame.MOUSEWHEEL:
                     self.mouse_wheel(event)
+
+                elif event.type == pygame.KEYDOWN:
+                    self.gestion_keyboard(event)
     
             self.draw()
     

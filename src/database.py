@@ -8,11 +8,15 @@ import numpy as np
 import pandas as pd
 import configparser
 from time import time
+from tqdm import tqdm
 from pathlib import Path
+from copy import deepcopy
 from unidecode import unidecode
+from scipy.spatial.distance import cdist
 
 # Object to manage the buttons
-from buttons import Button_selection, Button_app_actions, Text, Inidication
+from buttons import (Button_selection, Button_app_actions, Text, Inidication,
+                     Button_keyboard)
 
 pygame.init()
 
@@ -89,11 +93,20 @@ class DataGest:
         self.num_elem = 0     # Total number of documents
 
         # --- Comparison parameters (with buttons interactions) ---
-        self.to_compare = None               # 'lastname' ou 'firstname'
-        self.to_filter = None                # 'today', 'tod-1w', etc.
+        self.to_compare = None # 'lastname', 'firstname' or 'bothname'
+        self.to_filter = None  # 'today', 'tod-1w', etc.
+        self.treshold = 0.10   # treshold value for distance based algorithm
+
         self.use_special = np.array([False]) # Keep or not the accents
         self.filter_abv = np.array([False])  # Use only or not abreviations
         self.add_key = np.array([False])     # Render citation keys
+        self.both_comp = 'AND' # how both name distance will be handle
+
+        self.auth_len_last  = np.zeros(0) # if last  name isn't given
+        self.auth_len_first = np.zeros(0) # if first name isn't given
+        self.letters   = {'l':{}, 'f':{}} # founded letter with bag column
+        self.bag_last  = np.zeros(0)      # last  name per letter count
+        self.bag_first = np.zeros(0)      # first name per letter count
 
         # copy of papers
         self.papers_save = {}
@@ -115,137 +128,267 @@ class DataGest:
         self.light  = [] # if the line is white or grey
 
         # --- Buttons initialisation ---
-        # Database loading button
-        self.load_db_bt = Button_app_actions(
+        # Tab selection buttons
+        self.pannels_bt = Button_selection(
+            x_start=np.array([  0, 100, 250]) * self.SCALE,
+            x_stop =np.array([100, 250, 400]) * self.SCALE,
+            y_start=np.array([  0,   0,   0]) * self.SCALE,
+            y_stop =np.array([ 50,  50,  50]) * self.SCALE,
+            text=np.array(['Data', 'Settings', 'Execution']),
+            font=self.TITLE_FONT, lin_w=3, target='pannel',
+            values=np.array(['DATA', 'SETTINGS', 'EXECUTION']),
+            empty_sel=None, colors=[self.bg_color, self.bg_color])
+
+        # Buttons list for the Data pannel
+        self.data_buttons = [
+            # Database loading button
+            Button_app_actions(
             x_start=np.array([ 25]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
-            y_start=np.array([ 50]) * self.SCALE,
-            y_stop =np.array([ 90]) * self.SCALE,
+            y_start=np.array([ 60]) * self.SCALE,
+            y_stop =np.array([100]) * self.SCALE,
             text=np.array(['(Re)Load database']),
             font=self.TEXT_FONT, lin_w=3,
-            target='load_db_manager', bt_color=self.bt_color)
+            target='load_db_manager', bt_color=self.bt_color),
 
-        # Database compile button
-        self.compile_db_bt = Button_app_actions(
+            # Database compile button
+            Button_app_actions(
             x_start=np.array([ 25]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
-            y_start=np.array([100]) * self.SCALE,
-            y_stop =np.array([140]) * self.SCALE,
+            y_start=np.array([110]) * self.SCALE,
+            y_stop =np.array([150]) * self.SCALE,
             text=np.array(['Compile the database']),
             font=self.TEXT_FONT, lin_w=3,
-            target='compile_database', bt_color=self.bt_color)
+            target='compile_database', bt_color=self.bt_color),
 
-        # How the authors will be compared buttons
-        self.comparaison_bt = Button_selection(
+            # Algorithms buttons
+            Button_selection(
+            x_start=np.array([100, 100, 100]) * self.SCALE,
+            x_stop =np.array([300, 300, 300]) * self.SCALE,
+            y_start=np.array([180, 230, 280]) * self.SCALE,
+            y_stop =np.array([220, 270, 320]) * self.SCALE,
+            text=np.array(['Perfect', 'Levenshtein', 'Damerau-Levenshtein',
+                           ]),
+            font=self.TEXT_FONT, lin_w=3, target='algo',
+            values=np.array(['Perfect', 'Levenshtein', 'DamerauLevenshtein'
+                             ]),
+            empty_sel=None, colors=[(20, 250, 75), self.bt_color])]
+
+        # Buttons list for the Matching algorithm
+        self.matching_bt = [
+            # How the authors will be compared buttons
+            Button_selection(
             x_start=np.array([ 45, 245]) * self.SCALE,
             x_stop =np.array([155, 355]) * self.SCALE,
-            y_start=np.array([180, 180]) * self.SCALE,
-            y_stop =np.array([220, 220]) * self.SCALE,
+            y_start=np.array([100, 100]) * self.SCALE,
+            y_stop =np.array([140, 140]) * self.SCALE,
             text=np.array(['Last name', 'First name']),
             font=self.TEXT_FONT, lin_w=3, target='to_compare',
             values=np.array(['lastname', 'firstname']),
-            empty_sel=None, colors=[(20, 250, 75), self.bt_color])
+            empty_sel=None, colors=[(20, 250, 75), self.bt_color]),
 
-        # Filter on the date of the documents addition buttons
-        self.time_filter_bt = Button_selection(
-            x_start=np.array([ 40, 240,  40, 240]) * self.SCALE,
-            x_stop =np.array([160, 360, 160, 360]) * self.SCALE,
-            y_start=np.array([255, 255, 305, 305]) * self.SCALE,
-            y_stop =np.array([295, 295, 345, 345]) * self.SCALE,
-            text=np.array(['Today', '-1 week', '-1 month', '-1 year']),
-            font=self.TEXT_FONT, lin_w=3, target='to_filter',
-            values=np.array(['today', 'tod-1w', 'tod-1m', 'tod-1y']),
-            empty_sel=None, colors=[(20, 250, 75), self.bt_color])
+            # If the "special" letters are used or not (é -> e) button
+            Button_selection(
+            x_start=np.array([240]) * self.SCALE,
+            x_stop =np.array([360]) * self.SCALE,
+            y_start=np.array([200]) * self.SCALE,
+            y_stop =np.array([240]) * self.SCALE,
+            text=np.array(['Special']), font=self.TEXT_FONT, lin_w=3,
+            target='use_special', values=np.array([True]),
+            empty_sel=np.array([False]), colors=[(20, 250, 75), (255, 0, 0)]),
 
-        # If the abbreviation are used to filter button
-        self.abbreviation_bt = Button_selection(
+            # If the abbreviation are used to filter button
+            Button_selection(
             x_start=np.array([ 40]) * self.SCALE,
             x_stop =np.array([160]) * self.SCALE,
-            y_start=np.array([355]) * self.SCALE,
-            y_stop =np.array([395]) * self.SCALE,
+            y_start=np.array([200]) * self.SCALE,
+            y_stop =np.array([240]) * self.SCALE,
             text=np.array(['Abreviation']), font=self.TEXT_FONT, lin_w=3,
             target='filter_abv', values=np.array([True]),
             empty_sel=np.array([False]),
-            colors=[(20, 250, 75), self.bt_color])
+            colors=[(20, 250, 75), self.bt_color])]
 
-        # If the "special" letters are used or not (é -> e) button
-        self.special_letter_bt = Button_selection(
-            x_start=np.array([240]) * self.SCALE,
-            x_stop =np.array([360]) * self.SCALE,
-            y_start=np.array([355]) * self.SCALE,
-            y_stop =np.array([395]) * self.SCALE,
+        # Buttons list for the Levenshtein algorithm
+        self.levenshtein_bt = [
+            # How the authors will be compared buttons
+            Button_selection(
+            x_start=np.array([  5, 145, 285]) * self.SCALE,
+            x_stop =np.array([115, 255, 395]) * self.SCALE,
+            y_start=np.array([100, 100, 100]) * self.SCALE,
+            y_stop =np.array([140, 140, 140]) * self.SCALE,
+            text=np.array(['Last name', 'First name', 'Both name']),
+            font=self.TEXT_FONT, lin_w=3, target='to_compare',
+            values=np.array(['lastname', 'firstname', 'bothname']),
+            empty_sel=None, colors=[(20, 250, 75), self.bt_color]),
+
+            # If the "special" letters are used or not (é -> e) button
+            Button_selection(
+            x_start=np.array([140]) * self.SCALE,
+            x_stop =np.array([260]) * self.SCALE,
+            y_start=np.array([200]) * self.SCALE,
+            y_stop =np.array([240]) * self.SCALE,
             text=np.array(['Special']), font=self.TEXT_FONT, lin_w=3,
             target='use_special', values=np.array([True]),
-            empty_sel=np.array([False]), colors=[(20, 250, 75), (255, 0, 0)])
+            empty_sel=np.array([False]), colors=[(20, 250, 75), (255, 0, 0)]),
 
-        # If Better bibtex citation keys are displayed button
-        self.add_keys_bt = Button_selection(
+            # Define the treshold distance under which strings can be the same
+            Button_keyboard(
+            x_start=np.array([160]) * self.SCALE,
+            x_stop =np.array([360]) * self.SCALE,
+            y_start=np.array([300]) * self.SCALE,
+            y_stop =np.array([340]) * self.SCALE,
+            text='0.10', font=self.TEXT_FONT, lin_w=2,
+            target='treshold', bounds=[0., 1.]),
+        
+            # How the comparison is done when both name is selected
+            Button_selection(
+            x_start=np.array([  5, 145, 285]) * self.SCALE,
+            x_stop =np.array([115, 255, 395]) * self.SCALE,
+            y_start=np.array([400, 400, 400]) * self.SCALE,
+            y_stop =np.array([440, 440, 440]) * self.SCALE,
+            text=np.array(['AND', 'OR', 'Average']),
+            font=self.TEXT_FONT, lin_w=3, target='both_comp',
+            values=np.array(['AND', 'OR', 'AVG']),
+            empty_sel=np.array([True, False, False]),
+            colors=[(20, 250, 75), (255, 0, 0)])]
+
+        # Buttons list for the Demarau-Levenshtein algorithm
+        self.D_levenshtein_bt = [
+            # How the authors will be compared buttons
+            Button_selection(
+            x_start=np.array([  5, 145, 285]) * self.SCALE,
+            x_stop =np.array([115, 255, 395]) * self.SCALE,
+            y_start=np.array([100, 100, 100]) * self.SCALE,
+            y_stop =np.array([140, 140, 140]) * self.SCALE,
+            text=np.array(['Last name', 'First name', 'Both name']),
+            font=self.TEXT_FONT, lin_w=3, target='to_compare',
+            values=np.array(['lastname', 'firstname', 'bothname']),
+            empty_sel=None, colors=[(20, 250, 75), self.bt_color]),
+
+            # If the "special" letters are used or not (é -> e) button
+            Button_selection(
+            x_start=np.array([140]) * self.SCALE,
+            x_stop =np.array([260]) * self.SCALE,
+            y_start=np.array([200]) * self.SCALE,
+            y_stop =np.array([240]) * self.SCALE,
+            text=np.array(['Special']), font=self.TEXT_FONT, lin_w=3,
+            target='use_special', values=np.array([True]),
+            empty_sel=np.array([False]), colors=[(20, 250, 75), (255, 0, 0)]),
+
+            # Define the treshold distance under which strings can be the same
+            Button_keyboard(
+            x_start=np.array([160]) * self.SCALE,
+            x_stop =np.array([360]) * self.SCALE,
+            y_start=np.array([300]) * self.SCALE,
+            y_stop =np.array([340]) * self.SCALE,
+            text='0.10', font=self.TEXT_FONT, lin_w=2,
+            target='treshold', bounds=[0., 1.]),
+        
+            # How the comparison is done when both name is selected
+            Button_selection(
+            x_start=np.array([  5, 145, 285]) * self.SCALE,
+            x_stop =np.array([115, 255, 395]) * self.SCALE,
+            y_start=np.array([400, 400, 400]) * self.SCALE,
+            y_stop =np.array([440, 440, 440]) * self.SCALE,
+            text=np.array(['AND', 'OR', 'Average']),
+            font=self.TEXT_FONT, lin_w=3, target='both_comp',
+            values=np.array(['AND', 'OR', 'AVG']),
+            empty_sel=np.array([True, False, False]),
+            colors=[(20, 250, 75), (255, 0, 0)])]
+
+        # Buttons list for execution tab
+        self.execution_bt = [
+            # Filter on the date of the documents addition buttons
+            Button_selection(
+            x_start=np.array([ 40, 240,  40, 240]) * self.SCALE,
+            x_stop =np.array([160, 360, 160, 360]) * self.SCALE,
+            y_start=np.array([100, 100, 150, 150]) * self.SCALE,
+            y_stop =np.array([140, 140, 190, 190]) * self.SCALE,
+            text=np.array(['Today', '-1 week', '-1 month', '-1 year']),
+            font=self.TEXT_FONT, lin_w=3, target='to_filter',
+            values=np.array(['today', 'tod-1w', 'tod-1m', 'tod-1y']),
+            empty_sel=None, colors=[(20, 250, 75), self.bt_color]),
+
+            # If Better bibtex citation keys are displayed button
+            Button_selection(
             x_start=np.array([ 75]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
-            y_start=np.array([405]) * self.SCALE,
-            y_stop =np.array([445]) * self.SCALE,
+            y_start=np.array([260]) * self.SCALE,
+            y_stop =np.array([300]) * self.SCALE,
             text=np.array(['Display the citation key']),
             font=self.TEXT_FONT, lin_w=3, target='add_key',
             values=np.array([True]), empty_sel=np.array([False]),
-            colors=[(20, 250, 75), self.bt_color])
+            colors=[(20, 250, 75), self.bt_color]),
 
-        # Compare first/last name of the authors button
-        self.show_computed_bt = Button_app_actions(
+            # Compare first/last name of the authors button
+            Button_app_actions(
             x_start=np.array([ 75]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
             y_start=np.array([470]) * self.SCALE,
             y_stop =np.array([510]) * self.SCALE,
             text=np.array(['Show']), font=self.TEXT_FONT, lin_w=3,
-            target='compute_show', bt_color=self.bt_color)
+            target='compute_show', bt_color=self.bt_color),
 
-        # To reset parameters button
-        self.reset_param_bt = Button_app_actions(
+            # To reset parameters button
+            Button_app_actions(
             x_start=np.array([ 75]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
             y_start=np.array([520]) * self.SCALE,
             y_stop =np.array([560]) * self.SCALE,
             text=np.array(['Reset']), font=self.TEXT_FONT,
-            lin_w=3, target='reinit', bt_color=self.bt_color)
+            lin_w=3, target='reinit', bt_color=self.bt_color),
 
-        # To export the comparison between authors button
-        self.export_comparaison_bt = Button_app_actions(
+            # To export the comparison between authors button
+            Button_app_actions(
             x_start=np.array([ 75]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
             y_start=np.array([570]) * self.SCALE,
             y_stop =np.array([610]) * self.SCALE,
             text=np.array(['Export comparaison']),
             font=self.TEXT_FONT, lin_w=3,
-            target='compute_export_show', bt_color=self.bt_color)
+            target='compute_export_show', bt_color=self.bt_color),
 
-        # To export the database into a json file button
-        self.export_db_json_bt = Button_app_actions(
+            # To export the database into a json file button
+            Button_app_actions(
             x_start=np.array([ 75]) * self.SCALE,
             x_stop =np.array([325]) * self.SCALE,
             y_start=np.array([630]) * self.SCALE,
             y_stop =np.array([670]) * self.SCALE,
             text=np.array(['Export db as json']),
             font=self.TEXT_FONT, lin_w=3,
-            target='export_jsonf', bt_color=self.bt_color)
+            target='export_jsonf', bt_color=self.bt_color)]
 
-        # All buttons list
-        self.all_buttons = [
-            self.load_db_bt, self.compile_db_bt, self.comparaison_bt,
-            self.time_filter_bt, self.abbreviation_bt, self.special_letter_bt,
-            self.add_keys_bt, self.show_computed_bt, self.reset_param_bt,
-            self.export_comparaison_bt, self.export_db_json_bt]
+        # Which tab to show
+        self.pannel = 'DATA' # DATA, SETTINGS, EXECUTION
+
+        # Wich algorithm is choose
+        self.algo = None # Perfect, Levenshtein, DamerauLevenshtein
 
         # Text fields
-        self.title_txt = Text([200*self.SCALE]*4, np.array([20, 200, 275,
-            325])*self.SCALE, ['Manager', '/', '/', '/'], self.TITLE_FONT)
+        self.matching_txt = Text([200*self.SCALE]*3, np.array([75, 120, 170]
+            )*self.SCALE, ['Compare by:', '/', 'Filters:'], self.TITLE_FONT)
 
-        self.texte_txt = Text([200*self.SCALE]*2, np.array([165, 240]
-            )*self.SCALE, ['Compare by :', 'Filter by :'], self.TEXT_FONT)
+        self.levenshtein_txt = Text(np.array([200, 130, 270, 200, 150, 185,
+            130, 270])*self.SCALE, np.array([75, 120, 120, 180, 280, 380, 420,
+            420])*self.SCALE, ['To use:', '/', '/', 'Transform:',
+            'Maximum distance:', 'Reduction for both name:', '/', '/'],
+            self.TITLE_FONT)
+
+        self.dam_lev_txt = Text(np.array([200, 130, 270, 200, 150, 185, 130,
+            270])*self.SCALE, np.array([75, 120, 120, 180, 280, 380, 420, 420]
+            )*self.SCALE, ['To use:', '/', '/', 'Transform:',
+            'Maximum distance:', 'Reduction for both name:', '/', '/'],
+            self.TITLE_FONT)
+
+        self.execution_txt = Text(np.array([200]*3)*self.SCALE,
+            np.array([75, 120, 170])*self.SCALE, ['Filters:', '/', '/'],
+            self.TITLE_FONT)
 
         # Loading state square
-        self.load_sq = Inidication([342.5*self.SCALE, 50*self.SCALE,
+        self.load_sq = Inidication([342.5*self.SCALE, 60*self.SCALE,
                                     40*self.SCALE, 40*self.SCALE], [200,0,0])
         # Compilation state square
-        self.comp_sq = Inidication([342.5*self.SCALE, 100*self.SCALE,
+        self.comp_sq = Inidication([342.5*self.SCALE, 110*self.SCALE,
                                     40*self.SCALE, 40*self.SCALE], [200,0,0])
 
         # --- Warning messages dictionaries ---
@@ -258,19 +401,19 @@ class DataGest:
         # --- Error messages dictionaries ---
         y_centers = (np.array([350, 400, 450, 500]) * self.SCALE).tolist()
         self.error_messages = {
-         'no file': {'text':[
+         'no file':{'text':[
            'No database was found from the given access path, make',
             'sure you writte the correct path in the "main.ini" file.',
             'Given path:', str(self.from_path)],
           'y_center':y_centers},
 
-         'no betbib': {'text':[
+         'no betbib':{'text':[
            'No Better-BibTex database was found from the given access path,',
            'make sure you writte the correct path in the "main.ini" file.',
            'Given path:', str(self.from_path)],
           'y_center':y_centers},
 
-         'no database': {'text':[
+         'no database':{'text':[
            "No database has yet been imported, merged into one with:",
            "'(Re)Load database' before trying to compile."],
           'y_center':y_centers[:2]},
@@ -280,11 +423,58 @@ class DataGest:
            "'Compile the database' before trying to use it."],
           'y_center':y_centers[:2]},
 
-         'no compar': {
-          'text':[
+         'no compar':{'text':[
            "You need to choose how the authors will compare using the ",
            "buttons: 'Last name' / 'First name'."],
-          'y_center':y_centers[:2]}}
+          'y_center':y_centers[:2]},
+
+         'len0':{'text':["Maximum distance fields is empty !"],
+         'y_center':y_centers[:1]},
+
+         'nan':{'text':[
+          "Maximum distance is not a number !",
+          "Maximum distance field have multiple '.',",
+          "only one can be present."],
+         'y_center':y_centers[:3]},
+
+         'st.':{'text':[
+          "Maximum distance is not a number !",
+          "Maximum distance field have multiple '.',",
+          "only one can be present."],
+         'y_center':y_centers[:3]},
+
+         '0n':{'text':[
+          "Maximum distance is not a number !",
+          "Maximum distance field have multiple '.',",
+          "only one can be present."],
+         'y_center':y_centers[:3]},
+
+         'over':{'text':[
+          "Maximum distance is too high !",
+          "Maximum distance must be lower or equal to 1."],
+         'y_center':y_centers[:2]},
+
+         'under':{'text':[
+          "Maximum distance is too low !",
+          "Maximum distance must be greater or equal to 0."],
+         'y_center':y_centers[:2]}}
+
+    def reduce_string(self, string:str) -> str:
+        """
+        Function to remove space and dot in a string
+
+        Parameters
+        ----------
+        string : str
+            String to clean.
+
+        Returns
+        -------
+        str
+            Cleaned string.
+
+        """
+        return string.replace(' ', '').replace('.', '')
 
     def duplicate_table(self) -> None:
         """
@@ -304,6 +494,11 @@ class DataGest:
                 shutil.copyfile(self.from_path / 'better-bibtex.sqlite',
                                 self.to_path   / 'better-bibtex.sqlite')
 
+
+            elif os.path.isfile(self.from_path / 'better-bibtex.migrated'):
+                shutil.copyfile(self.from_path / 'better-bibtex.migrated',
+                                self.to_path   / 'better-bibtex.migrated')
+
             else:
                 self.state = 'ERROR'
                 self.error_type = 'no betbib'
@@ -316,6 +511,12 @@ class DataGest:
         """
         Function to extract all databse from the copied `.sqlite` files and
         store them under pandas.DataFrame in a dictionary.
+
+        Parameters
+        ----------
+        path : pathlib.Path
+            Access path to database.
+
         """
         # Connection to SQLite database copied in read-only mode
         connect = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -351,7 +552,11 @@ class DataGest:
         self.data = self.extract_valid_tables(path_data)
 
         # Extracts data from the Better BibTex database
-        path_data = self.to_path / 'better-bibtex.sqlite'
+        if os.path.isfile(self.to_path / 'better-bibtex.sqlite'):
+            path_data = self.to_path / 'better-bibtex.sqlite'
+        elif os.path.isfile(self.to_path / 'better-bibtex.migrated'):
+            path_data = self.to_path / 'better-bibtex.migrated'
+        
         self.data_cite_key = self.extract_valid_tables(path_data)
         self.data_cite_key = self.data_cite_key['citationkey']
         self.one_loaded = True
@@ -396,7 +601,7 @@ class DataGest:
         # better bibtex citation keys will be used as acces keys
         # for the dictionary
         keys = np.copy(self.data_cite_key.loc[:, 'citationKey'])
-        for i in range(self.num_elem):
+        for i in tqdm(range(self.num_elem)):
             self.papers[keys[i]] = {}
             # Various id linked to the document
             self.papers[keys[i]]['itemID'] = self.data_cite_key.loc[
@@ -510,123 +715,544 @@ class DataGest:
         # create 1d array for time comparison wich will be faster than loop
         authkeys = np.sort(list(self.authors.keys()))
         self.auth_time = np.zeros(len(authkeys), dtype='datetime64[D]')
-        #self.auth_abv = np.zeros(len(authkeys))
+        # if author first name have '.' in it
+        self.auth_abv = np.zeros(len(authkeys), dtype=bool)
+        # author last and first name length
+        self.auth_len_last  = np.zeros(len(authkeys))
+        self.auth_len_first = np.zeros(len(authkeys))
+        # letters in authors last and first name
+        self.bag_last = np.zeros((len(authkeys), 256), dtype='uint8')
+        self.bag_first = np.zeros((len(authkeys), 256), dtype='uint8')
+        c_l, c_f = 0, 0
         for i in range(len(authkeys)):
             self.auth_time[i] = self.authors[authkeys[i]]['date'][0]
+            self.auth_abv[i] = '.' in self.authors[authkeys[i]]['firstName']
 
-    def comparison_by(self) -> None:
+            l_red = self.reduce_string(self.authors[authkeys[i]]['lastName'])
+            f_red = self.reduce_string(self.authors[authkeys[i]]['firstName'])
+
+            self.auth_len_last[i]  = len(l_red)
+            self.auth_len_first[i] = len(f_red)
+
+            u_l, v_l = np.unique(list(l_red), return_counts=True)
+            for j in range(len(u_l)):
+                if u_l[j] not in self.letters['l']:
+                    self.letters['l'][u_l[j]] = c_l
+                    self.bag_last[i, c_l] = v_l[j]
+                    c_l += 1
+                else:
+                    self.bag_last[i, c_l] = v_l[j]
+
+            u_f, v_f = np.unique(list(f_red), return_counts=True)
+            for j in range(len(u_f)):
+                if u_f[j] not in self.letters['f']:
+                    self.letters['f'][u_f[j]] = c_f
+                    self.bag_first[i, c_f] = v_f[j]
+                    c_f += 1
+                else:
+                    self.bag_first[i, c_f] = v_f[j]
+
+        self.bag_last = self.bag_last[:, :c_l]
+        self.bag_first = self.bag_first[:, :c_f]
+
+    def preparation_matching(self) -> (np.ndarray, str, str):
         """
-        Function to compute the authors comparison through the various
-        parameters choiced in the UI.
+        Function to make the global first step for every mathing options.
+
+        Returns
+        -------
+        mask_operations : numpy.ndarray
+            Numpy 1 dimensional boolean array.
+        firstName : str
+            First name author.
+        lastName : str
+            Last name author.
+
         """
         # Compute time filtering using numpy.ndarray
         if self.to_filter == 'today':
-            mask_time = self.auth_time < self.today
+            mask_time = self.auth_time >= self.today
         elif self.to_filter == 'tod-1w':
-            mask_time = self.auth_time < self.tod_1w
+            mask_time = self.auth_time >= self.tod_1w
         elif self.to_filter == 'tod-1m':
-            mask_time = self.auth_time < self.tod_1m
+            mask_time = self.auth_time >= self.tod_1m
         elif self.to_filter == 'tod-1y':
-            mask_time = self.auth_time < self.tod_1y
+            mask_time = self.auth_time >= self.tod_1y
+
+        w = len(self.auth_time)
+        mask_square = np.triu(np.ones((w, w), dtype=bool), 1)
+        mask_operations = np.ones(int(w**2/2-w/2), dtype=bool)
 
         # flat with the right way
         if self.to_filter != None:
-            mask_time = mask_time & mask_time[:, np.newaxis]
-            mask_time = mask_time[(np.arange(len(self.auth_time)) -
-                                   np.arange(len(self.auth_time))[:,
-                                       np.newaxis]) > 0]
+            mask = mask_time & mask_time[:, None]
+            mask_operations = mask_operations & mask[mask_square]
+
+        if np.any(self.filter_abv):
+            mask = self.auth_abv&self.auth_abv[:, None]
+            mask_operations = mask_operations & mask[mask_square]
 
         if np.any(self.use_special):
-            firstName = 'firstName'
-            lastName = 'lastName'
+            firstName = 'firstName' ; lastName = 'lastName'
         else:
             # First and Last names without special caracters,
             # removed with unicode.unicode
-            firstName = 'firstName_uc'
-            lastName = 'lastName_uc'
+            firstName = 'firstName_uc' ; lastName = 'lastName_uc'
+
+        if self.to_compare == 'lastname':
+            # Ignore the case if one of the author didn't give its last name
+            # (not seen in my corpus of size 3,734)
+            mask = (self.auth_len_last>0)&(self.auth_len_last[:, None]>0)
+            mask_operations = mask_operations & mask[mask_square]
+
+        elif self.to_compare == 'firstname':
+            # Ignore the case if an author didn't give its first name (i.e.:
+            # organisations, anonymous, some indonesian authors...)
+            mask = (self.auth_len_first>0)&(self.auth_len_first[:, None]>0)
+            mask_operations = mask_operations & mask[mask_square]
+
+        if self.algo == 'Levenshtein' or self.algo == 'DamerauLevenshtein':
+            # for Damerau-Levenshtein, I need to implement a safer parameter
+            # due to transposition matrix test
+            if (self.to_compare == 'firstname'):
+                prescore = np.minimum(
+                    self.auth_len_last[:, None], self.auth_len_last
+                    ) / np.maximum(
+                    self.auth_len_last[:, None], self.auth_len_last)
+
+                mask = prescore > self.treshold
+                pre_d = cdist(self.bag_last, self.bag_last,
+                              metric='cityblock') / 2 / np.maximum(
+                    self.auth_len_last[:, None], self.auth_len_last
+                    ) <= self.treshold
+
+            elif (self.to_compare == 'lastname'):
+                prescore = np.minimum(
+                    self.auth_len_first[:, None], self.auth_len_first
+                    ) / np.maximum(
+                    self.auth_len_first[:, None], self.auth_len_first)
+
+                mask = prescore > self.treshold
+                pre_d = cdist(self.bag_first, self.bag_first,
+                              metric='cityblock') / 2 / np.maximum(
+                    self.auth_len_last[:, None], self.auth_len_last
+                    ) <= self.treshold
+
+            elif (self.to_compare == 'bothname'):
+                prescore_f = np.minimum(
+                    self.auth_len_first[:, None], self.auth_len_first
+                    ) / np.maximum(
+                    self.auth_len_first[:, None], self.auth_len_first)
+
+                prescore_l = np.minimum(
+                    self.auth_len_last[:, None], self.auth_len_last
+                    ) / np.maximum(
+                    self.auth_len_last[:, None], self.auth_len_last)
+
+                pre_f = cdist(self.bag_first, self.bag_first,
+                    metric='cityblock') / 2 / np.maximum(
+                    self.auth_len_first[:, None], self.auth_len_first)
+
+                pre_l = cdist(self.bag_last, self.bag_last,
+                    metric='cityblock') / 2 / np.maximum(
+                    self.auth_len_last[:, None], self.auth_len_last)
+
+                if self.both_comp == 'AND':
+                    mask = (prescore_f > self.treshold)&(
+                            prescore_l > self.treshold)
+
+                    pre_d = (pre_f <= self.treshold)&(pre_l <= self.treshold)
+
+                elif self.both_comp == 'OR':
+                    mask = (prescore_f > self.treshold)|(
+                            prescore_l > self.treshold)
+
+                    pre_d = (pre_f <= self.treshold)|(pre_l <= self.treshold)
+
+                elif self.both_comp == 'AVG':
+                    mask = ((prescore_f+prescore_l)/2) > self.treshold
+                    pre_d = (pre_f + pre_l) / 2 <= self.treshold
+
+            mask_operations = mask_operations & mask[mask_square]
+            mask_operations = mask_operations & pre_d[mask_square]
+
+        # Re-Initialisation
+        self.liste1 = [] ; self.liste2 = [] ; self.light = []
+
+        return mask_operations, firstName, lastName
+
+    def update_comparison(self, authkeys_i:str, authkeys_j:str, color:bool
+                          ) -> bool:
+        """
+        Function to add citation keys if asked.
+
+        Parameters
+        ----------
+        authkeys_i : dict
+            First author.
+        authkeys_j : dict
+            Second author.
+        color : bool
+            If the line is white (False) or grey (True).
+
+        Returns
+        -------
+        not color : bool
+            If the line is white (False) or grey (True).
+
+        """
+        if np.any(self.add_key):
+            # if the better bibtex citation key
+            k1 = self.authors[authkeys_i]['dispkeys']
+            k2 = self.authors[authkeys_j]['dispkeys']
+            l1 = len(k1) ; l2 = len(k2)
+            if l1 == l2:
+                for l in range(l1):
+                    self.liste1.append(k1[l])
+                    self.liste2.append(k2[l])
+                    self.light.append(color)
+
+            elif l1 > l2:
+                for l in range(l1):
+                    self.liste1.append(k1[l])
+                    self.light.append(color)
+                    if l < l2:
+                        self.liste2.append(k2[l])
+                    else:
+                        self.liste2.append(' ')
+
+            elif l1 < l2:
+                for l in range(l2):
+                    self.liste2.append(k2[l])
+                    self.light.append(color)
+                    if l < l1:
+                        self.liste1.append(k1[l])
+                    else:
+                        self.liste1.append(' ')
+
+        self.liste1.append(' ')
+        self.liste2.append(' ')
+        self.light.append(color)
+
+        return not color
+
+    def clean_Lev_strings(self, string_1:str, string_2:str
+                          ) -> (np.ndarray, np.ndarray):
+        """
+        Function to transform and filter some characters of the strings used
+        to compute Levenshtein and Damerau-Levenshtein distance.
+
+        Parameters
+        ----------
+        string_1 : str
+            First string.
+        string_2 : str
+            Secind string.
+
+        Returns
+        -------
+        arr_str_1 : np.ndarray
+            Numpy 1 dimensional string ndarray.
+        arr_str_2 : np.ndarray
+            Numpy 1 dimensional string ndarray.
+
+        """
+        arr_str_1 = np.array(list(self.reduce_string(string_1)))
+        arr_str_2 = np.array(list(self.reduce_string(string_2)))
+        return arr_str_1, arr_str_2
+
+    def Levenshtein_distance(self, string_1:str, string_2:str) -> float:
+        """
+        Levenshtein distance function.
+
+        Parameters
+        ----------
+        string_1 : str
+            First string.
+        string_2 : str
+            Secind string.
+
+        Returns
+        -------
+        float
+            Levenshtein distance.
+
+        """
+        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
+        len1, len2 = len(arr_str_1), len(arr_str_2)
+        dist = np.zeros((len1+1, len2+1))
+        dist[0] = np.arange(0, len2+1, 1)
+        dist[:, 0] = np.arange(0, len1+1, 1)
+        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
+        for i in range(2, len1+len2+1):
+            i_indices = np.arange(max(1, i - len2), min(i, len1 + 1))
+            j_indices = i - i_indices
+            dist[i_indices, j_indices] = np.min([
+                dist[i_indices-1, j_indices  ] + 1,
+                dist[i_indices  , j_indices-1] + 1,
+                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
+                axis=0)
+
+        return dist[-1, -1] / max([len1, len2])
+
+    def Levenshtein_distance_es(self, string_1:str, string_2:str) -> float:
+        """
+        Levenshtein distance function with treshold based early stoping.
+
+        Parameters
+        ----------
+        string_1 : str
+            First string.
+        string_2 : str
+            Secind string.
+
+        Returns
+        -------
+        float
+            Levenshtein distance with 1.0 when early stoping is triggered.
+
+        """
+        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
+        len1, len2 = len(arr_str_1), len(arr_str_2)
+        dist = np.zeros((len1+1, len2+1))
+        dist[0] = np.arange(0, len2+1, 1)
+        dist[:, 0] = np.arange(0, len1+1, 1)
+        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
+        maxim = max([len1, len2])
+        runned = True
+        for i in range(2, len1+len2+1):
+            i_indices = np.arange(max(1, i-len2), min(i, len1+1))
+            j_indices = i - i_indices
+            minim = np.min([
+                dist[i_indices-1, j_indices  ] + 1,
+                dist[i_indices  , j_indices-1] + 1,
+                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
+                 axis=0)
+
+            if (np.min(minim)/maxim) > self.treshold:
+                runned = False
+                break
+
+            else:
+                dist[i_indices, j_indices] = minim
+
+        if runned:
+            return dist[-1, -1] / maxim
+        else:
+            return 1.
+
+    def Damerau_Levenshtein(self, string_1:str, string_2:str):
+        """
+        Function to compute Damerau-Levenshtein distance.
+
+        Parameters
+        ----------
+        string_1 : str
+            First string.
+        string_2 : str
+            Secind string.
+
+        Returns
+        -------
+        float
+            Damerau-Levenshtein distance.
+
+        """
+        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
+
+        len1 = len(arr_str_1)
+        len2 = len(arr_str_2)
+        dist = np.zeros((len1+1, len2+1))
+        dist[0] = np.arange(0, len2+1, 1)
+        dist[:, 0] = np.arange(0, len1+1, 1)
+        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
+    
+        for i in range(2, len1+len2+1):
+            i_indices = np.arange(max(1, i - len2), min(i, len1 + 1))
+            j_indices = i - i_indices
+            dist[i_indices, j_indices] = np.min([
+                dist[i_indices-1, j_indices  ] + 1,
+                dist[i_indices  , j_indices-1] + 1,
+                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
+                axis=0)
+    
+            if i > 2:
+                mask = (i_indices > 1)&(j_indices > 1)
+                i_p2 = i_indices[mask] ; j_p2 = j_indices[mask]
+    
+                mask = (arr_str_1[i_p2-1] == arr_str_2[j_p2-2])&(
+                        arr_str_1[i_p2-2] == arr_str_2[j_p2-1])
+    
+                if np.any(mask):
+                    dist[i_p2[mask], j_p2[mask]] = np.min([
+                        dist[i_p2[mask]  , j_p2[mask]  ],
+                        dist[i_p2[mask]-2, j_p2[mask]-2]+1], axis=0)
+    
+        return dist[-1, -1] / max(len1, len2)
+    
+    def Damerau_Levenshtein_es(self, string_1:str, string_2:str):
+        """
+        Function to compute Damerau-Levenshtein distance with early stoping.
+
+        Parameters
+        ----------
+        string_1 : str
+            First string.
+        string_2 : str
+            Secind string.
+
+        Returns
+        -------
+        float
+            Damerau-Levenshtein distance with 1.0 if the early stoping is
+            triggered.
+
+        """
+        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
+    
+        len1 = len(arr_str_1)
+        len2 = len(arr_str_2)
+        dist = np.zeros((len1+1, len2+1))
+        dist[0] = np.arange(0, len2+1, 1)
+        dist[:, 0] = np.arange(0, len1+1, 1)
+        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
+        maxim = max(len1, len2)
+        runned = True
+        for i in range(2, len1+len2+1):
+            i_indices = np.arange(max(1, i - len2), min(i, len1 + 1))
+            j_indices = i - i_indices
+            dist[i_indices, j_indices] = np.min([
+                dist[i_indices-1, j_indices  ] + 1,
+                dist[i_indices  , j_indices-1] + 1,
+                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
+                axis=0)
+    
+            if i > 2:
+                mask = (i_indices > 1)&(j_indices > 1)
+                i_p2 = i_indices[mask] ; j_p2 = j_indices[mask]
+    
+                mask = (arr_str_1[i_p2-1] == arr_str_2[j_p2-2])&(
+                        arr_str_1[i_p2-2] == arr_str_2[j_p2-1])
+    
+                if np.any(mask):
+                    dist[i_p2[mask], j_p2[mask]] = np.min([
+                        dist[i_p2[mask]  , j_p2[mask]  ],
+                        dist[i_p2[mask]-2, j_p2[mask]-2]+1], axis=0)
+    
+            if ((np.min(dist[i_indices, j_indices])-1.)/maxim) >self.treshold:
+                runned = False
+                break
+    
+        if runned:
+            return dist[-1, -1] / maxim
+        else:
+            return 1.0
+
+    def record_matching(self, val_a1:str, val_a2:str, val_b1:str, val_b2:str,
+                        color:bool) -> None:
+        """
+        Function to append matching results into the comparison list.
+
+        Parameters
+        ----------
+        val_a1 : str
+            First part of the author name. Can be first or last name.
+        val_a2 : str
+            Second part of the author name. Can be first or last name.
+        val_b1 : str
+            First part of the author name. Can be first or last name.
+        val_b2 : str
+            Second part of the author name. Can be first or last name.
+        color : bool
+            If the background line is white (False) or grey (True).
+
+        """
+        self.liste1.append(val_a1+', '+val_a2)
+        self.liste2.append(val_b1+', '+val_b2)
+        self.light.append(color)
+
+    def comparison_matching(self) -> None:
+        """
+        Function to compute the comparison between each authors pair.
+        """
+        # Global precomputing
+        mask_operations, firstName, lastName = self.preparation_matching()
+
+        if self.algo == 'Perfect':
+            is_match = lambda a, b: a == b
+
+        else:
+            # for optimisation use early stoping version whe treshold < 0.
+            if self.algo == 'Levenshtein':
+                # for optimisation use early stoping version whe treshold < 0.74
+                if self.treshold >= 0.74:
+                    f_dist = self.Levenshtein_distance
+                else:
+                    f_dist = self.Levenshtein_distance_es
+    
+            elif self.algo == 'DamerauLevenshtein':
+                if self.treshold >= 0.72:
+                    f_dist = self.Damerau_Levenshtein_distance
+                else:
+                    f_dist = self.Damerau_Levenshtein_distance_es
+
+            is_match = lambda a, b: f_dist(a, b) <= self.treshold
 
         c_idx = 0
-        self.liste1 = []
-        self.liste2 = []
-        self.light = []
         color = False
         authkeys = np.sort(list(self.authors.keys()))
         num_aut = len(authkeys)
+        pbar = tqdm(total=len(mask_operations))
         for i in range(num_aut-1):
-            c_s1 = self.authors[authkeys[i]][firstName]
-            c_n1 = self.authors[authkeys[i]][lastName]
-            if np.any(self.filter_abv):
-                abb_s1 = '.' not in c_s1
-
+            auth_1 = self.authors[authkeys[i]]
             for j in range(i+1, num_aut):
+                auth_2 = self.authors[authkeys[j]]
                 c_s2 = self.authors[authkeys[j]][firstName]
                 c_n2 = self.authors[authkeys[j]][lastName]
-                to_comp = True
                 same = False
-                # Time filtering
-                if self.to_filter != None:
-                    if mask_time[c_idx]:
-                        to_comp = False
-
-                    c_idx +=1
-
-                if to_comp:
-                    if np.any(self.filter_abv):
-                        if abb_s1&('.' not in c_s2):
-                            to_comp = False
-
-                if to_comp:
+                if mask_operations[c_idx]:
                     # Last / First name comparison
                     if self.to_compare == 'lastname':
-                        if c_n1 == c_n2:
+                        if is_match(auth_1[lastName], auth_2[lastName]):
                             same = True
-                            self.liste1.append(c_n1+', '+c_s1)
-                            self.liste2.append(c_n2+', '+c_s2)
-                            self.light.append(color)
+                            self.record_matching(
+                                auth_1[lastName], auth_1[firstName],
+                                auth_2[lastName], auth_2[firstName], color)
 
                     elif self.to_compare == 'firstname':
-                        if c_s1 == c_s2:
+                        if is_match(auth_1[firstName], auth_2[firstName]):
                             same = True
-                            self.liste1.append(c_s1+', '+c_n1)
-                            self.liste2.append(c_s2+', '+c_n2)
-                            self.light.append(color)
+                            self.record_matching(
+                                auth_1[firstName], auth_1[lastName],
+                                auth_2[firstName], auth_2[lastName], color)
 
+                    elif self.to_compare == 'bothname':
+                        d_l = f_dist(auth_1[lastName], auth_2[lastName])
+                        d_f = f_dist(auth_1[firstName], auth_2[firstName])
+                        if self.both_comp == 'AND':
+                            # if one True => == 1.0 else == 0.0
+                            d = float((d_l > self.treshold) or
+                                      (d_f > self.treshold))
+
+                        elif self.both_comp == 'OR':
+                            d = float((d_l > self.treshold) and
+                                      (d_f > self.treshold))
+
+                        elif self.both_comp == 'AVG':
+                            d = (d_l+d_f)/2
+
+                        if d <= self.treshold:
+                            same = True
+                            self.record_matching(
+                                auth_1[lastName], auth_1[firstName],
+                                auth_2[lastName], auth_2[firstName], color)
+
+                c_idx += 1
                 if same:
-                    if np.any(self.add_key):
-                        # if the better bibtex citation key
-                        k1 = self.authors[authkeys[i]]['dispkeys']
-                        k2 = self.authors[authkeys[j]]['dispkeys']
-                        l1 = len(k1)
-                        l2 = len(k2)
-                        if l1 == l2:
-                            for l in range(l1):
-                                self.liste1.append(k1[l])
-                                self.liste2.append(k2[l])
-                                self.light.append(color)
+                    color = self.update_comparison(authkeys[i], authkeys[j],
+                                                   color)
 
-                        elif l1 > l2:
-                            for l in range(l1):
-                                self.liste1.append(k1[l])
-                                self.light.append(color)
-                                if l < l2:
-                                    self.liste2.append(k2[l])
-                                else:
-                                    self.liste2.append(' ')
-
-                        elif l1 < l2:
-                            for l in range(l2):
-                                self.liste2.append(k2[l])
-                                self.light.append(color)
-                                if l < l1:
-                                    self.liste1.append(k1[l])
-                                else:
-                                    self.liste1.append(' ')
-
-                    self.liste1.append(' ')
-                    self.liste2.append(' ')
-                    self.light.append(color)
-
-                    color = ~ color
+                pbar.update(1)
 
     def export_comparaison(self) -> None:
         """
@@ -700,4 +1326,3 @@ class DataGest:
 
             except IOError as e:
                 print(f"Error saving dictionary: {e}")
-
