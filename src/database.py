@@ -85,7 +85,8 @@ class DataGest:
                         [self.sp_pb, self.l_pb]]
 
         self.prog_box = np.array([self.st_pb, self.h_pb, 0, 40*self.SCALE])
-        self.refresh_rate = int(self.FPS * 2) # in milliseconds
+        # refresh rate of the progression bar in milliseconds
+        self.refresh_rate = int(self.FPS * 2)
 
         # white empty box
         self.box_tx = [400*self.SCALE, 0, 800*self.SCALE, self.HEIGHT]
