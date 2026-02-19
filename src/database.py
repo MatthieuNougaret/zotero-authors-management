@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import configparser
 from time import time
-from tqdm import tqdm
 from pathlib import Path
 from copy import deepcopy
 from unidecode import unidecode
@@ -64,6 +63,29 @@ class DataGest:
         self.COMP_TX_DY  = 5*self.SCALE # y offset comparison text
         # Comparison feilds x midle line division
         self.DIVIDERS = 790*self.SCALE
+        self.prog_bar = False    # If a progression bar is render
+        self.index = 0           # Index of iteration bar
+        self.tot_idx = 1         # last index of the iteration bar
+        # second part of progression bar text
+        self.max_i_blit = self.TITLE_FONT.render('/ 1', 1, 'black')
+        self.max_i_pos  = (0, 0) # where to draw the max iter num
+        # first part of progression bar text
+        self.idx_blit = self.TITLE_FONT.render('0', 1, 'black')
+        self.idx_pos = (0, 0)    # where to draw the current iter
+
+        # Progression bar
+        self.st_pb = 110 * self.SCALE
+        self.sp_pb = 1080 * self.SCALE
+        self.h_pb = 450*self.SCALE-20*self.SCALE
+        self.l_pb = 450*self.SCALE+20*self.SCALE
+        self.width_pb = self.sp_pb - self.st_pb
+        self.pb_line = [[self.st_pb, self.h_pb],
+                        [self.st_pb, self.l_pb],
+                        [self.sp_pb, self.h_pb],
+                        [self.sp_pb, self.l_pb]]
+
+        self.prog_box = np.array([self.st_pb, self.h_pb, 0, 40*self.SCALE])
+        self.refresh_rate = int(self.FPS * 2) # in milliseconds
 
         # white empty box
         self.box_tx = [400*self.SCALE, 0, 800*self.SCALE, self.HEIGHT]
@@ -520,6 +542,11 @@ class DataGest:
         path : pathlib.Path
             Access path to database.
 
+        Returns
+        -------
+        dico_tables : pd.DataFrame
+            Data frame with the extracted data.
+
         """
         # Connection to SQLite database copied in read-only mode
         connect = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -591,10 +618,42 @@ class DataGest:
             self.comp_sq.color = [242, 133, 0]
             self.comp_st = 1
 
-    def treat_by_paper(self) -> None:
+    def initialize_bar(self, max_ite:int) -> None:
+        """
+        Function to compute the parameters needed to render the progression
+        bar.
+
+        Parameters
+        ----------
+        max_ite : int
+            Total number of iteration expected.
+
+        """
+        self.index = 0
+        self.tot_idx = max_ite
+        self.max_i_blit = self.TEXT_FONT.render(
+            '/ '+str(self.tot_idx), 1, 'black')
+
+        self.max_i_pos = (600*self.SCALE,
+                          400*self.SCALE-self.max_i_blit.get_height()/2)
+
+        self.idx_blit = self.TEXT_FONT.render(str(self.index), 1, 'black')
+        self.idx_pos = [595*self.SCALE-self.idx_blit.get_width(),
+                        400*self.SCALE-self.max_i_blit.get_height()/2]
+
+        self.width_pb = (self.sp_pb - self.st_pb) / self.tot_idx
+        self.prog_box[2] = 0
+        self.prog_bar = True
+
+    def treat_by_paper(self, app) -> None:
         """
         Function to extract usefull documents informations and pre compute
         some of ther caracteristics for optimisation.
+
+        Parameters
+        ----------
+        app : Manager(DataGest)
+            Manager class to get the other attributes.
 
         Informations extracted / used:
         keys[i]: str
@@ -627,7 +686,10 @@ class DataGest:
         # better bibtex citation keys will be used as acces keys
         # for the dictionary
         keys = np.copy(self.data_cite_key.loc[:, 'citationKey'])
-        for i in tqdm(range(self.num_elem)):
+        self.initialize_bar(self.num_elem)
+        app.draw()
+        stop = False ; t = pygame.time.get_ticks()
+        for i in range(self.num_elem):
             self.papers[keys[i]] = {}
             # Various id linked to the document
             self.papers[keys[i]]['itemID'] = self.data_cite_key.loc[
@@ -738,50 +800,74 @@ class DataGest:
                         self.authors[cle_aut]['date'] = self.papers[
                             keys[i]]['date']
 
-        # create 1d array for time comparison wich will be faster than loop
-        authkeys = np.sort(list(self.authors.keys()))
-        self.auth_time = np.zeros(len(authkeys), dtype='datetime64[D]')
-        # if author first name have '.' in it
-        self.auth_abv = np.zeros(len(authkeys), dtype=bool)
-        # author last and first name length
-        self.auth_len_last  = np.zeros(len(authkeys))
-        self.auth_len_first = np.zeros(len(authkeys))
-        # letters in authors last and first name
-        self.bag_last = np.zeros((len(authkeys), 256), dtype='uint8')
-        self.bag_first = np.zeros((len(authkeys), 256), dtype='uint8')
-        c_l, c_f = 0, 0
-        for i in range(len(authkeys)):
-            self.auth_time[i] = self.authors[authkeys[i]]['date'][0]
-            self.auth_abv[i] = '.' in self.authors[authkeys[i]]['firstName']
+            self.index = i+1
+            if pygame.time.get_ticks() - t > self.refresh_rate:
+                t = pygame.time.get_ticks()
+                self.prog_box[2] = self.index * self.width_pb
+                app.draw()
 
-            l_red = self.reduce_string(self.authors[authkeys[i]]['lastName'])
-            f_red = self.reduce_string(self.authors[authkeys[i]]['firstName'])
+                stop = self.quit_in_loop(app)
+                if stop:
+                    break
 
-            self.auth_len_last[i]  = len(l_red)
-            self.auth_len_first[i] = len(f_red)
+        if not stop:
+            # 1d array for time comparison wich will be faster than loop
+            authkeys = np.sort(list(self.authors.keys()))
+            self.auth_time = np.zeros(len(authkeys), dtype='datetime64[D]')
+            # if author first name have '.' in it
+            self.auth_abv = np.zeros(len(authkeys), dtype=bool)
+            # author last and first name length
+            self.auth_len_last  = np.zeros(len(authkeys))
+            self.auth_len_first = np.zeros(len(authkeys))
+            # letters in authors last and first name
+            self.bag_last = np.zeros((len(authkeys), 256), dtype='uint8')
+            self.bag_first = np.zeros((len(authkeys), 256), dtype='uint8')
+            c_l, c_f = 0, 0
+            for i in range(len(authkeys)):
+                self.auth_time[i] = self.authors[authkeys[i]]['date'][0]
+                self.auth_abv[i] = '.' in self.authors[authkeys[i]][
+                                                                'firstName']
 
-            u_l, v_l = np.unique(list(l_red), return_counts=True)
-            for j in range(len(u_l)):
-                if u_l[j] not in self.letters['l']:
-                    self.letters['l'][u_l[j]] = c_l
-                    self.bag_last[i, c_l] = v_l[j]
-                    c_l += 1
-                else:
-                    self.bag_last[i, c_l] = v_l[j]
+                l_red = self.reduce_string(
+                    self.authors[authkeys[i]]['lastName'])
 
-            u_f, v_f = np.unique(list(f_red), return_counts=True)
-            for j in range(len(u_f)):
-                if u_f[j] not in self.letters['f']:
-                    self.letters['f'][u_f[j]] = c_f
-                    self.bag_first[i, c_f] = v_f[j]
-                    c_f += 1
-                else:
-                    self.bag_first[i, c_f] = v_f[j]
+                f_red = self.reduce_string(
+                    self.authors[authkeys[i]]['firstName'])
 
-        self.bag_last = self.bag_last[:, :c_l]
-        self.bag_first = self.bag_first[:, :c_f]
+                self.authors[authkeys[i]]['l_Name_r'] = np.array(list(l_red))
+                self.authors[authkeys[i]]['f_Name_r'] = np.array(list(f_red))
+                self.authors[authkeys[i]]['l_Name_uc_r'] = np.array(list(
+                                                            unidecode(l_red)))
 
-    def preparation_matching(self) -> (np.ndarray, str, str):
+                self.authors[authkeys[i]]['f_Name_uc_r'] = np.array(list(
+                                                            unidecode(f_red)))
+
+                self.auth_len_last[i]  = len(l_red)
+                self.auth_len_first[i] = len(f_red)
+
+                u_l, v_l = np.unique(list(l_red), return_counts=True)
+                for j in range(len(u_l)):
+                    if u_l[j] not in self.letters['l']:
+                        self.letters['l'][u_l[j]] = c_l
+                        self.bag_last[i, c_l] = v_l[j]
+                        c_l += 1
+                    else:
+                        self.bag_last[i, c_l] = v_l[j]
+
+                u_f, v_f = np.unique(list(f_red), return_counts=True)
+                for j in range(len(u_f)):
+                    if u_f[j] not in self.letters['f']:
+                        self.letters['f'][u_f[j]] = c_f
+                        self.bag_first[i, c_f] = v_f[j]
+                        c_f += 1
+                    else:
+                        self.bag_first[i, c_f] = v_f[j]
+
+            self.bag_last = self.bag_last[:, :c_l]
+            self.bag_first = self.bag_first[:, :c_f]
+            self.prog_bar = False
+
+    def preparation_matching(self) -> (np.ndarray, str, str, str, str):
         """
         Function to make the global first step for every mathing options.
 
@@ -820,10 +906,12 @@ class DataGest:
 
         if np.any(self.use_special):
             firstName = 'firstName' ; lastName = 'lastName'
+            firstName_r = 'f_Name_r' ; lastName_r = 'l_Name_r'
         else:
             # First and Last names without special caracters,
             # removed with unicode.unicode
             firstName = 'firstName_uc' ; lastName = 'lastName_uc'
+            firstName_r = 'f_Name_uc_r' ; lastName_r = 'l_Name_uc_r'
 
         if self.to_compare == 'lastname':
             # Ignore the case if one of the author didn't give its last name
@@ -913,7 +1001,8 @@ class DataGest:
         # Re-Initialisation
         self.liste1 = [] ; self.liste2 = [] ; self.light = []
 
-        return mask_operations, firstName, lastName
+        self.initialize_bar(len(mask_operations))
+        return mask_operations, firstName, lastName, firstName_r, lastName_r
 
     def update_comparison(self, authkeys_i:str, authkeys_j:str, color:bool
                           ) -> bool:
@@ -970,41 +1059,17 @@ class DataGest:
 
         return not color
 
-    def clean_Lev_strings(self, string_1:str, string_2:str
-                          ) -> (np.ndarray, np.ndarray):
-        """
-        Function to transform and filter some characters of the strings used
-        to compute Levenshtein and Damerau-Levenshtein distance.
-
-        Parameters
-        ----------
-        string_1 : str
-            First string.
-        string_2 : str
-            Secind string.
-
-        Returns
-        -------
-        arr_str_1 : np.ndarray
-            Numpy 1 dimensional string ndarray.
-        arr_str_2 : np.ndarray
-            Numpy 1 dimensional string ndarray.
-
-        """
-        arr_str_1 = np.array(list(self.reduce_string(string_1)))
-        arr_str_2 = np.array(list(self.reduce_string(string_2)))
-        return arr_str_1, arr_str_2
-
-    def Levenshtein_distance(self, string_1:str, string_2:str) -> float:
+    def Levenshtein_distance(self, arr_str_1:np.ndarray, arr_str_2:np.ndarray
+                             ) -> float:
         """
         Levenshtein distance function.
 
         Parameters
         ----------
-        string_1 : str
-            First string.
-        string_2 : str
-            Secind string.
+        arr_str_1 : np.ndarray
+            First cleaned string from space and dot.
+        arr_str_2 : np.ndarray
+            Secind cleaned string from space and dot.
 
         Returns
         -------
@@ -1012,7 +1077,7 @@ class DataGest:
             Levenshtein distance.
 
         """
-        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
+
         len1, len2 = len(arr_str_1), len(arr_str_2)
         dist = np.zeros((len1+1, len2+1))
         dist[0] = np.arange(0, len2+1, 1)
@@ -1029,16 +1094,17 @@ class DataGest:
 
         return dist[-1, -1] / max([len1, len2])
 
-    def Levenshtein_distance_es(self, string_1:str, string_2:str) -> float:
+    def Levenshtein_distance_es(self, arr_str_1:np.ndarray,
+                                arr_str_2:np.ndarray) -> float:
         """
         Levenshtein distance function with treshold based early stoping.
 
         Parameters
         ----------
-        string_1 : str
-            First string.
-        string_2 : str
-            Secind string.
+        arr_str_1 : np.ndarray
+            First cleaned string from space and dot.
+        arr_str_2 : np.ndarray
+            Secind cleaned string from space and dot.
 
         Returns
         -------
@@ -1046,16 +1112,7 @@ class DataGest:
             Levenshtein distance with 1.0 when early stoping is triggered.
 
         """
-        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
         len1, len2 = len(arr_str_1), len(arr_str_2)
-        if len1 == 0 or len2 == 0:
-            print('')
-            print(string_1, string_2)
-            print(arr_str_1)
-            print(arr_str_2)
-            print('')
-            raise
-            return 1.0
 
         dist = np.zeros((len1+1, len2+1))
         dist[0] = np.arange(0, len2+1, 1)
@@ -1084,16 +1141,17 @@ class DataGest:
         else:
             return 1.
 
-    def Damerau_Levenshtein(self, string_1:str, string_2:str):
+    def Damerau_Levenshtein(self, arr_str_1:np.ndarray, arr_str_2:np.ndarray
+                             ) -> float:
         """
         Function to compute Damerau-Levenshtein distance.
 
         Parameters
         ----------
-        string_1 : str
-            First string.
-        string_2 : str
-            Secind string.
+        arr_str_1 : np.ndarray
+            First cleaned string from space and dot.
+        arr_str_2 : np.ndarray
+            Secind cleaned string from space and dot.
 
         Returns
         -------
@@ -1101,8 +1159,6 @@ class DataGest:
             Damerau-Levenshtein distance.
 
         """
-        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
-
         len1 = len(arr_str_1)
         len2 = len(arr_str_2)
         dist = np.zeros((len1+1, len2+1))
@@ -1133,16 +1189,17 @@ class DataGest:
     
         return dist[-1, -1] / max(len1, len2)
     
-    def Damerau_Levenshtein_es(self, string_1:str, string_2:str):
+    def Damerau_Levenshtein_es(self, arr_str_1:np.ndarray,
+                               arr_str_2:np.ndarray) -> float:
         """
         Function to compute Damerau-Levenshtein distance with early stoping.
 
         Parameters
         ----------
-        string_1 : str
-            First string.
-        string_2 : str
-            Secind string.
+        arr_str_1 : np.ndarray
+            First cleaned string from space and dot.
+        arr_str_2 : np.ndarray
+            Secind cleaned string from space and dot.
 
         Returns
         -------
@@ -1151,10 +1208,8 @@ class DataGest:
             triggered.
 
         """
-        arr_str_1, arr_str_2 = self.clean_Lev_strings(string_1, string_2)
-    
-        len1 = len(arr_str_1)
-        len2 = len(arr_str_2)
+        len1 = len(arr_str_1) ; len2 = len(arr_str_2)
+
         dist = np.zeros((len1+1, len2+1))
         dist[0] = np.arange(0, len2+1, 1)
         dist[:, 0] = np.arange(0, len1+1, 1)
@@ -1214,26 +1269,35 @@ class DataGest:
         self.liste2.append(val_b1+', '+val_b2)
         self.light.append(color)
 
-    def comparison_matching(self) -> None:
+    def comparison_matching(self, app) -> None:
         """
         Function to compute the comparison between each authors pair.
+
+        Parameters
+        ----------
+        app : Manager(DataGest)
+            Manager class to get the other attributes.
+
         """
         # Global precomputing
-        mask_operations, firstName, lastName = self.preparation_matching()
+        (mask_operations, firstName_rpr, lastName_rpr, firstName_cp,
+         lastName_cp) = self.preparation_matching()
 
         if self.algo == 'Perfect':
+            firstName_cp = firstName_rpr
+            lastName_cp  = lastName_rpr
             is_match = lambda a, b: a == b
 
         else:
-            # for optimisation use early stoping version whe treshold < 0.
             if self.algo == 'Levenshtein':
-                # for optimisation use early stoping version whe treshold < 0.74
+                # for optimisation use early stoping when treshold < 0.74
                 if self.treshold >= 0.74:
                     f_dist = self.Levenshtein_distance
                 else:
                     f_dist = self.Levenshtein_distance_es
     
             elif self.algo == 'DamerauLevenshtein':
+                # for optimisation use early stoping when treshold < 0.72
                 if self.treshold >= 0.72:
                     f_dist = self.Damerau_Levenshtein_distance
                 else:
@@ -1241,39 +1305,41 @@ class DataGest:
 
             is_match = lambda a, b: f_dist(a, b) <= self.treshold
 
-        c_idx = 0
-        color = False
+        color = False ; stop = False ; t = pygame.time.get_ticks()
         authkeys = np.sort(list(self.authors.keys()))
         num_aut = len(authkeys)
-        pbar = tqdm(total=len(mask_operations))
+        app.draw()
         for i in range(num_aut-1):
             auth_1 = self.authors[authkeys[i]]
             for j in range(i+1, num_aut):
                 auth_2 = self.authors[authkeys[j]]
-                c_s2 = self.authors[authkeys[j]][firstName]
-                c_n2 = self.authors[authkeys[j]][lastName]
                 same = False
-                if mask_operations[c_idx]:
+                if mask_operations[self.index]:
                     # Last / First name comparison
                     if self.to_compare == 'lastname':
-                        if is_match(auth_1[lastName], auth_2[lastName]):
+                        if is_match(auth_1[lastName_cp], auth_2[lastName_cp]):
                             same = True
                             self.record_matching(
-                                auth_1[lastName], auth_1[firstName],
-                                auth_2[lastName], auth_2[firstName], color)
+                                auth_1[lastName_rpr], auth_1[firstName_rpr],
+                                auth_2[lastName_rpr], auth_2[firstName_rpr],
+                                color)
 
                     elif self.to_compare == 'firstname':
-                        if is_match(auth_1[firstName], auth_2[firstName]):
+                        if is_match(auth_1[firstName_cp],
+                                    auth_2[firstName_cp]):
                             same = True
                             self.record_matching(
-                                auth_1[firstName], auth_1[lastName],
-                                auth_2[firstName], auth_2[lastName], color)
+                                auth_1[firstName_rpr], auth_1[lastName_rpr],
+                                auth_2[firstName_rpr], auth_2[lastName_rpr],
+                                color)
 
                     elif self.to_compare == 'bothname':
-                        d_l = f_dist(auth_1[lastName], auth_2[lastName])
-                        d_f = f_dist(auth_1[firstName], auth_2[firstName])
+                        d_l = f_dist(auth_1[lastName_cp], auth_2[lastName_cp])
+                        d_f = f_dist(auth_1[firstName_cp],
+                                     auth_2[firstName_cp])
+
                         if self.both_comp == 'AND':
-                            # if one True => == 1.0 else == 0.0
+                            # if one or two True == 1.0, else == 0.0
                             d = float((d_l > self.treshold) or
                                       (d_f > self.treshold))
 
@@ -1287,15 +1353,27 @@ class DataGest:
                         if d <= self.treshold:
                             same = True
                             self.record_matching(
-                                auth_1[lastName], auth_1[firstName],
-                                auth_2[lastName], auth_2[firstName], color)
+                                auth_1[lastName_rpr], auth_1[firstName_rpr],
+                                auth_2[lastName_rpr], auth_2[firstName_rpr],
+                                color)
 
-                c_idx += 1
                 if same:
                     color = self.update_comparison(authkeys[i], authkeys[j],
                                                    color)
 
-                pbar.update(1)
+                self.index += 1
+                if pygame.time.get_ticks() - t > self.refresh_rate:
+                    t = pygame.time.get_ticks()
+                    self.prog_box[2] = self.index * self.width_pb
+                    app.draw()
+                    stop = self.quit_in_loop(app)
+                    if stop:
+                        break
+
+            if stop:
+                break
+
+        self.prog_bar = False
 
     def export_comparaison(self) -> None:
         """
@@ -1369,3 +1447,31 @@ class DataGest:
 
             except IOError as e:
                 print(f"Error saving dictionary: {e}")
+
+    def quit_in_loop(self, app):
+        """
+        Function to be able to terminate the program without passing by
+        comand killing process.
+
+        Parameters
+        ----------
+        app : Manager(DataGest)
+            Manager class to get the other attributes.
+
+        Returns
+        -------
+        stop : bool
+            If the loop con continue (False) or not (True).
+
+        """
+        stop = False
+        for event in pygame.event.get():
+            # Click handling (ignoring wheel as click)
+            if event.type == pygame.QUIT:
+                app.run = False
+                stop = True
+                break
+
+        return stop
+
+

@@ -43,6 +43,8 @@ class Manager(DataGest):
         """
         self.one_loaded = False
         self.m_text = False
+        self.prog_bar = False
+        self.index = 0
 
         self.load_sq.color = [200, 0, 0]
         self.comp_sq.color = [200, 0, 0]
@@ -218,7 +220,7 @@ class Manager(DataGest):
         if self.one_loaded:
             self.state = 'COMPUTING'
             self.draw()
-            self.treat_by_paper()
+            self.treat_by_paper(self)
             self.state = 'IDLE'
             self.comp_st = 2
             self.comp_sq.color = [0, 200, 0]
@@ -279,7 +281,7 @@ class Manager(DataGest):
                     if type(button) == Button_keyboard:
                         self.treshold = float(button.temp)
 
-            self.comparison_matching()
+            self.comparison_matching(self)
             self.state = 'IDLE'
             self.tex_y = 0 # Reset scroll to top
             n_gene = len(self.liste1)
@@ -441,22 +443,23 @@ class Manager(DataGest):
         """
         Function to render the result of the author comparision.
         """
-        c = 0
-        for i in range(self.tex_y, self.tex_y+self.delta_txy):
-            if self.light[i]:
-                pygame.draw.rect(self.window, self.bt_color,
-                    (self.box_tx[0], c*self.text_height, self.box_tx[2],
-                     self.text_height))
-
-            tx = self.TEXT_FONT.render(self.liste1[i], 1, 'black')
-            self.window.blit(tx, (self.COMP_TX_X[0],
-                                  self.COMP_TX_DY+self.text_height*c))
-
-            tx = self.TEXT_FONT.render(self.liste2[i], 1, 'black')
-            self.window.blit(tx, (self.COMP_TX_X[1],
-                                  self.COMP_TX_DY+self.text_height*c))
-
-            c += 1
+        if self.state not in self.waiting_messages:
+            c = 0
+            for i in range(self.tex_y, self.tex_y+self.delta_txy):
+                if self.light[i]:
+                    pygame.draw.rect(self.window, self.bt_color,
+                        (self.box_tx[0], c*self.text_height, self.box_tx[2],
+                         self.text_height))
+    
+                tx = self.TEXT_FONT.render(self.liste1[i], 1, 'black')
+                self.window.blit(tx, (self.COMP_TX_X[0],
+                                      self.COMP_TX_DY+self.text_height*c))
+    
+                tx = self.TEXT_FONT.render(self.liste2[i], 1, 'black')
+                self.window.blit(tx, (self.COMP_TX_X[1],
+                                      self.COMP_TX_DY+self.text_height*c))
+    
+                c += 1
 
         # --- SCROLLBAR AREA ---
         pygame.draw.rect(self.window, 'white', self.fscroll)
@@ -549,7 +552,7 @@ class Manager(DataGest):
         for i in range(len(message['text'])):
             self.draw_text_msg(message['text'][i], message['y_center'][i])
 
-    def draw_waiting_screen(self, message:str):
+    def draw_waiting_screen(self, message:str) -> None:
         """
         Renders a simple overlay with a message during long computations.
 
@@ -561,7 +564,22 @@ class Manager(DataGest):
         box = np.array([100, 100, 1000, 500]) * self.SCALE
         pygame.draw.rect(self.window, self.bt_color, box)
         pygame.draw.rect(self.window, (0, 0, 0), box, 3)
-        self.draw_text_msg(message, 350 * self.SCALE)
+        self.draw_text_msg(message, 300 * self.SCALE)
+        if self.prog_bar:
+            # The progression bar
+            pygame.draw.line(self.window, 'black', self.pb_line[0],
+                             self.pb_line[1], 2)
+
+            pygame.draw.line(self.window, 'black', self.pb_line[2],
+                             self.pb_line[3], 2)
+
+            pygame.draw.rect(self.window, 'black', self.prog_box)
+            # The text of the progression bar
+            self.idx_blit = self.TEXT_FONT.render(str(self.index), 1, 'black')
+            self.idx_pos[0] = 595*self.SCALE-self.idx_blit.get_width()
+
+            self.window.blit(self.idx_blit, self.idx_pos)
+            self.window.blit(self.max_i_blit, self.max_i_pos)
 
     def draw(self) -> None:
         """
@@ -582,8 +600,8 @@ class Manager(DataGest):
         Application entry point. Contains the main event loop.
         """
         clock = pygame.time.Clock()
-        run = True
-        while run:
+        self.run = True
+        while self.run:
             clock.tick(self.FPS)
             self.mouse_pos = pygame.mouse.get_pos()
 
@@ -594,7 +612,7 @@ class Manager(DataGest):
             for event in pygame.event.get():
                 # Click handling (ignoring wheel as click)
                 if event.type == pygame.QUIT:
-                    run = False
+                    self.run = False
                     break
 
                 # Scroll handling

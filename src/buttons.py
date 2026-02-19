@@ -479,6 +479,7 @@ class Inidication:
         """
         pygame.draw.rect(window, self.color, self.box)
 
+
 class Text:
     """
     Render text class.
