@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-02-19
+### Added
+- Progression bar for both database compilation and authors comparison.
+- Optimize (small) Levenshtein and Damerau-Levenshtein.
+
 ## [0.4.0] - 2026-02-18
 ### Added
 - Fix the abandonment of the use of the better-bibtex.sqlite file by the pluging. 
