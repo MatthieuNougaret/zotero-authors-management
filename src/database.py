@@ -13,6 +13,9 @@ from copy import deepcopy
 from unidecode import unidecode
 from scipy.spatial.distance import cdist
 
+# For string distances
+import distances
+
 # Object to manage the buttons
 from buttons import (Button_selection, Button_app_actions, Text, Inidication,
                      Button_keyboard)
@@ -482,6 +485,12 @@ class DataGest:
           "Maximum distance is too low !",
           "Maximum distance must be greater or equal to 0."],
          'y_center':y_centers[:2]}}
+
+        # Warm-Up for numba.njit acceleration
+        warmup_1 = np.array(['a', 'b', 'c', 'd', 'e'])
+        warmup_2 = np.array(['f', 'g', 'h', 'i', 'j'])
+        distances.Levenshtein_distance(warmup_1, warmup_2)
+        distances.Damerau_Levenshtein_distance(warmup_1, warmup_2)
 
     def reduce_string(self, string:str) -> str:
         """
@@ -1060,41 +1069,6 @@ class DataGest:
 
         return not color
 
-    def Levenshtein_distance(self, arr_str_1:np.ndarray, arr_str_2:np.ndarray
-                             ) -> float:
-        """
-        Levenshtein distance function.
-
-        Parameters
-        ----------
-        arr_str_1 : np.ndarray
-            First cleaned string from space and dot.
-        arr_str_2 : np.ndarray
-            Secind cleaned string from space and dot.
-
-        Returns
-        -------
-        float
-            Levenshtein distance.
-
-        """
-
-        len1, len2 = len(arr_str_1), len(arr_str_2)
-        dist = np.zeros((len1+1, len2+1))
-        dist[0] = np.arange(0, len2+1, 1)
-        dist[:, 0] = np.arange(0, len1+1, 1)
-        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
-        for i in range(2, len1+len2+1):
-            i_indices = np.arange(max(1, i - len2), min(i, len1 + 1))
-            j_indices = i - i_indices
-            dist[i_indices, j_indices] = np.min([
-                dist[i_indices-1, j_indices  ] + 1,
-                dist[i_indices  , j_indices-1] + 1,
-                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
-                axis=0)
-
-        return dist[-1, -1] / max([len1, len2])
-
     def Levenshtein_distance_es(self, arr_str_1:np.ndarray,
                                 arr_str_2:np.ndarray) -> float:
         """
@@ -1103,9 +1077,9 @@ class DataGest:
         Parameters
         ----------
         arr_str_1 : np.ndarray
-            First cleaned string from space and dot.
+            First array of the cleaned string from space and dot.
         arr_str_2 : np.ndarray
-            Secind cleaned string from space and dot.
+            Second array of the cleaned string from space and dot.
 
         Returns
         -------
@@ -1113,87 +1087,16 @@ class DataGest:
             Levenshtein distance with 1.0 when early stoping is triggered.
 
         """
-        len1, len2 = len(arr_str_1), len(arr_str_2)
+        # self.treshold is a float (and not a np.float64)
+        dist = distances.Levenshtein_distance_es(arr_str_1, arr_str_2,
+                                                 self.treshold)
 
-        dist = np.zeros((len1+1, len2+1))
-        dist[0] = np.arange(0, len2+1, 1)
-        dist[:, 0] = np.arange(0, len1+1, 1)
-        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
-        maxim = max([len1, len2])
-        runned = True
-        for i in range(2, len1+len2+1):
-            i_indices = np.arange(max(1, i-len2), min(i, len1+1))
-            j_indices = i - i_indices
-            minim = np.min([
-                dist[i_indices-1, j_indices  ] + 1,
-                dist[i_indices  , j_indices-1] + 1,
-                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
-                 axis=0)
+        return dist
 
-            if (np.min(minim)/maxim) > self.treshold:
-                runned = False
-                break
-
-            else:
-                dist[i_indices, j_indices] = minim
-
-        if runned:
-            return dist[-1, -1] / maxim
-        else:
-            return 1.
-
-    def Damerau_Levenshtein(self, arr_str_1:np.ndarray, arr_str_2:np.ndarray
-                             ) -> float:
+    def Damerau_Levenshtein_distance_es(self, arr_str_1:np.ndarray,
+                                        arr_str_2:np.ndarray) -> float:
         """
-        Function to compute Damerau-Levenshtein distance.
-
-        Parameters
-        ----------
-        arr_str_1 : np.ndarray
-            First cleaned string from space and dot.
-        arr_str_2 : np.ndarray
-            Secind cleaned string from space and dot.
-
-        Returns
-        -------
-        float
-            Damerau-Levenshtein distance.
-
-        """
-        len1 = len(arr_str_1)
-        len2 = len(arr_str_2)
-        dist = np.zeros((len1+1, len2+1))
-        dist[0] = np.arange(0, len2+1, 1)
-        dist[:, 0] = np.arange(0, len1+1, 1)
-        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
-    
-        for i in range(2, len1+len2+1):
-            i_indices = np.arange(max(1, i - len2), min(i, len1 + 1))
-            j_indices = i - i_indices
-            dist[i_indices, j_indices] = np.min([
-                dist[i_indices-1, j_indices  ] + 1,
-                dist[i_indices  , j_indices-1] + 1,
-                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
-                axis=0)
-    
-            if i > 2:
-                mask = (i_indices > 1)&(j_indices > 1)
-                i_p2 = i_indices[mask] ; j_p2 = j_indices[mask]
-    
-                mask = (arr_str_1[i_p2-1] == arr_str_2[j_p2-2])&(
-                        arr_str_1[i_p2-2] == arr_str_2[j_p2-1])
-    
-                if np.any(mask):
-                    dist[i_p2[mask], j_p2[mask]] = np.min([
-                        dist[i_p2[mask]  , j_p2[mask]  ],
-                        dist[i_p2[mask]-2, j_p2[mask]-2]+1], axis=0)
-    
-        return dist[-1, -1] / max(len1, len2)
-    
-    def Damerau_Levenshtein_es(self, arr_str_1:np.ndarray,
-                               arr_str_2:np.ndarray) -> float:
-        """
-        Function to compute Damerau-Levenshtein distance with early stoping.
+        Damerau-Levenshtein distance function with early stoping.
 
         Parameters
         ----------
@@ -1209,43 +1112,10 @@ class DataGest:
             triggered.
 
         """
-        len1 = len(arr_str_1) ; len2 = len(arr_str_2)
+        dist = distances.Damerau_Levenshtein_distance_es(arr_str_1, arr_str_2,
+                                                         self.treshold)
 
-        dist = np.zeros((len1+1, len2+1))
-        dist[0] = np.arange(0, len2+1, 1)
-        dist[:, 0] = np.arange(0, len1+1, 1)
-        dist[1:, 1:] = (arr_str_1[:, None] != arr_str_2).astype(int)
-        maxim = max(len1, len2)
-        runned = True
-        for i in range(2, len1+len2+1):
-            i_indices = np.arange(max(1, i - len2), min(i, len1 + 1))
-            j_indices = i - i_indices
-            dist[i_indices, j_indices] = np.min([
-                dist[i_indices-1, j_indices  ] + 1,
-                dist[i_indices  , j_indices-1] + 1,
-                dist[i_indices-1, j_indices-1] + dist[i_indices, j_indices]],
-                axis=0)
-    
-            if i > 2:
-                mask = (i_indices > 1)&(j_indices > 1)
-                i_p2 = i_indices[mask] ; j_p2 = j_indices[mask]
-    
-                mask = (arr_str_1[i_p2-1] == arr_str_2[j_p2-2])&(
-                        arr_str_1[i_p2-2] == arr_str_2[j_p2-1])
-    
-                if np.any(mask):
-                    dist[i_p2[mask], j_p2[mask]] = np.min([
-                        dist[i_p2[mask]  , j_p2[mask]  ],
-                        dist[i_p2[mask]-2, j_p2[mask]-2]+1], axis=0)
-    
-            if ((np.min(dist[i_indices, j_indices])-1.)/maxim) >self.treshold:
-                runned = False
-                break
-    
-        if runned:
-            return dist[-1, -1] / maxim
-        else:
-            return 1.0
+        return dist
 
     def record_matching(self, val_a1:str, val_a2:str, val_b1:str, val_b2:str,
                         color:bool) -> None:
@@ -1291,16 +1161,16 @@ class DataGest:
 
         else:
             if self.algo == 'Levenshtein':
-                # for optimisation use early stoping when treshold < 0.74
-                if self.treshold >= 0.74:
-                    f_dist = self.Levenshtein_distance
+                # for optimisation use early stoping when treshold <= 0.78
+                if self.treshold > 0.78:
+                    f_dist = distances.Levenshtein_distance
                 else:
                     f_dist = self.Levenshtein_distance_es
     
             elif self.algo == 'DamerauLevenshtein':
-                # for optimisation use early stoping when treshold < 0.72
-                if self.treshold >= 0.72:
-                    f_dist = self.Damerau_Levenshtein_distance
+                # for optimisation use early stoping when treshold <= 0.79
+                if self.treshold > 0.79:
+                    f_dist = distances.Damerau_Levenshtein_distance
                 else:
                     f_dist = self.Damerau_Levenshtein_distance_es
 

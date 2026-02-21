@@ -36,6 +36,12 @@ class Manager(DataGest):
         self.tex_y = 0     # Scroll index (which row starts the display)
         self.delta_txy = 0 # Number of rows currently visible
 
+        # Warm-Up for numba.njit acceleration
+        warmup_1 = np.array(['a', 'b', 'c', 'd', 'e'])
+        warmup_2 = np.array(['f', 'g', 'h', 'i', 'j'])
+        self.Levenshtein_distance_es(warmup_1, warmup_2)
+        self.Damerau_Levenshtein_distance_es(warmup_1, warmup_2)
+
     def reinit(self) -> None:
         """
         Resets the application state, clearing all loaded data and UI positions.
