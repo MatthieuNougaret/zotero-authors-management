@@ -86,8 +86,7 @@ class Manager(DataGest):
         self.light = []
 
         # Scrollbar reset
-        self.bscroll[1] = max([1, 3 * self.SCALE])
-        self.bscroll[3] = 692 * self.SCALE
+        self.scroller.re_init()
         self.tex_y = 0
         self.delta_txy = 0
 
@@ -141,6 +140,7 @@ class Manager(DataGest):
         if self.mouse_pos[0] > self.COMP_TX_X[0]:
             # set the buttons to False
             self.m_text = True
+            self.scroller.test_mouse(self.mouse_pos)
         else:
             self.m_text = False
 
@@ -166,43 +166,6 @@ class Manager(DataGest):
         elif self.pannel == 'EXECUTION':
             for button in self.execution_bt:
                 button.test_mouse(self.mouse_pos)
-
-    def mouse_wheel(self, event:pygame.event.Event) -> None:
-        """
-        Handles mouse wheel events for scrolling through comparison panels and
-        updates the display's vertical scroll positions.
-
-        Parameters
-        ----------
-        event : pygame.event.Event
-            The mouse wheel event object. It's expected to have 'y' attribute
-            indicating scroll direction (1 for up, -1 for down).
-
-        """
-        n_gene = len(self.liste1)
-        if self.m_text:
-            if (event.y != 0)&(n_gene > self.mx_tx_y):
-                # Determine scroll direction and update the vertical text
-                # offset indexe (self.tex_y)
-                if event.y == 1:
-                    self.tex_y = max([self.tex_y-event.y, 0])
-                else: # == -1
-                    self.tex_y = min([self.tex_y-event.y,
-                                      n_gene-self.mx_tx_y])
-
-                # Update the position of the scrollbar thumb (self.bscroll[1])
-                # based on the new vertical text offset. It scales the scrol-
-                # -lbar position proportionally to the text's scroll position.
-                self.bscroll[1] = (max([1, 3 * self.SCALE]) +
-                                   self.tex_y * self.text_height *
-                                   (self.mx_tx_y / n_gene))
-
-                # Calculate the number of lines currently printed in
-                # comparison panel
-                if (n_gene - self.tex_y) >= self.mx_tx_y:
-                    self.delta_txy = self.mx_tx_y
-                else:
-                    self.delta_txy = (n_gene - self.tex_y)
 
     def load_db_manager(self) -> None:
         """
@@ -290,23 +253,7 @@ class Manager(DataGest):
             self.comparison_matching(self)
             self.state = 'IDLE'
             self.tex_y = 0 # Reset scroll to top
-            n_gene = len(self.liste1)
-
-            # Adjust scrollbar geometry for the new list length
-            if n_gene > self.mx_tx_y:
-                self.bscroll[1] = (max([1, 3 * self.SCALE]) +
-                                   self.tex_y * self.text_height *
-                                   (self.mx_tx_y / n_gene))
-
-                # Scale scrollbar thumb (min 15 pixels for usability)
-                self.bscroll[3] = (692 * self.SCALE * self.mx_tx_y / n_gene
-                                   ) if (n_gene < 1000) else 15*self.SCALE
-
-            # Refresh display boundaries
-            if (n_gene-self.tex_y) >= self.mx_tx_y:
-                self.delta_txy = self.mx_tx_y
-            else:
-                self.delta_txy = (n_gene-self.tex_y)
+            self.scroller.initialise_scroller(self)
 
     def compute_export_show(self) -> None:
         """
@@ -352,7 +299,10 @@ class Manager(DataGest):
 
         elif self.state == 'IDLE':
             self.pannels_bt.actions(self)
-            if self.pannel == 'DATA':
+            if self.m_text:
+                self.scroller.click(self)
+
+            elif self.pannel == 'DATA':
                 for button in self.data_buttons:
                     button.actions(self)
 
@@ -456,27 +406,22 @@ class Manager(DataGest):
                     pygame.draw.rect(self.window, self.bt_color,
                         (self.box_tx[0], c*self.text_height, self.box_tx[2],
                          self.text_height))
-    
+
                 tx = self.TEXT_FONT.render(self.liste1[i], 1, 'black')
                 self.window.blit(tx, (self.COMP_TX_X[0],
                                       self.COMP_TX_DY+self.text_height*c))
-    
+
                 tx = self.TEXT_FONT.render(self.liste2[i], 1, 'black')
                 self.window.blit(tx, (self.COMP_TX_X[1],
                                       self.COMP_TX_DY+self.text_height*c))
-    
+
                 c += 1
 
-        # --- SCROLLBAR AREA ---
-        pygame.draw.rect(self.window, 'white', self.fscroll)
-        if len(self.liste1) > self.mx_tx_y:
-            # The scrollbar thumb
-            pygame.draw.rect(self.window, self.bt_color, self.bscroll)
+        # --- SCROLLBAR AND OTHER AREA ---
+        self.scroller.draw(self.window)
 
         # Outlines and dividers
         pygame.draw.rect(self.window, (0, 0, 0), self.box_tx, 2)
-        # scorll box
-        pygame.draw.rect(self.window, (0, 0, 0), self.fscroll, 2)
         # midle line
         pygame.draw.line(self.window, (0, 0, 0), (self.DIVIDERS, 0),
                          (self.DIVIDERS, self.HEIGHT), 2)
@@ -627,9 +572,9 @@ class Manager(DataGest):
                     self.mouse_gestion_clic()
     
                 if event.type == pygame.MOUSEWHEEL:
-                    self.mouse_wheel(event)
+                    self.scroller.mouse_wheel(event, self)
 
-                elif event.type == pygame.KEYDOWN:
+                if event.type == pygame.KEYDOWN:
                     self.gestion_keyboard(event)
     
             self.draw()

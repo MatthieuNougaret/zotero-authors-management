@@ -146,8 +146,9 @@ def Damerau_Levenshtein_distance_es(arr_str_1:np.ndarray,
     """
     len1, len2 = len(arr_str_1), len(arr_str_2)
     if len1 < len2:
-        return Damerau_Levenshtein_distance_es(arr_str_2, arr_str_1)
+        return Damerau_Levenshtein_distance_es(arr_str_2, arr_str_1, treshold)
 
+    max_len = max(len1, len2)
     max_dist = treshold*max_len
     prev_row = np.arange(0., len2+1., 1., dtype=np.float64)
     prev_m2_row = np.zeros(len2+1, dtype=np.float64)

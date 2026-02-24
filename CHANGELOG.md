@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-02-24
+### Added
+- Scroll controls are now into a new and specific object in buttons.py.
+- Click in the scrollbar to move the scroller faster.
+- Correct an error in Damerau_Levenshtein_distance_es.
+
 ## [0.4.2] - 2026-02-21
 ### Added
 - Optimize (~twice faster) Levenshtein and Damerau-Levenshtein using numba library through njit.

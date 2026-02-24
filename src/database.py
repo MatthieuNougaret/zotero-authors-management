@@ -18,7 +18,7 @@ import distances
 
 # Object to manage the buttons
 from buttons import (Button_selection, Button_app_actions, Text, Inidication,
-                     Button_keyboard)
+                     Button_keyboard, Scroll_barr)
 
 pygame.init()
 
@@ -54,16 +54,18 @@ class DataGest:
             'Arial', max([1, int(30*self.SCALE)]), bold=True)
 
         # --- G/UI Constants ---
-        self.mx_tx_y     =  23        # Max number of lines visible in
-        #                               comparison panel
-        self.text_height =  30 *self.SCALE # Vertical space for each line of
-        #                                    text
-        self.TXT_LEN = [380*self.SCALE, 385*self.SCALE] # text lenght limits
-        self.COMP_LINES  = [785*self.SCALE, 790*self.SCALE,
-                            800*self.SCALE] # comparison pannel limits
-        self.COMP_TX_X   = [405*self.SCALE, 795*self.SCALE] # x comparison 
-        #                                                     text position
-        self.COMP_TX_DY  = 5*self.SCALE # y offset comparison text
+        # Vertical space for each line of text
+        self.text_height = 30 *self.SCALE
+        # Maximum number of lines visible in the comparison panel
+        self.mx_tx = int(self.HEIGHT / self.text_height)
+        # text lenght limits
+        self.TXT_LEN = [380*self.SCALE, 385*self.SCALE]
+        # comparison pannel limits
+        self.COMP_LINES  = [785*self.SCALE, 790*self.SCALE, 800*self.SCALE]
+        # x comparison text position
+        self.COMP_TX_X   = [405*self.SCALE, 795*self.SCALE]
+        # y offset comparison text
+        self.COMP_TX_DY  = 5*self.SCALE
         # Comparison feilds x midle line division
         self.DIVIDERS = 790*self.SCALE
         self.prog_bar = False    # If a progression bar is render
@@ -82,10 +84,8 @@ class DataGest:
         self.h_pb = 450*self.SCALE-20*self.SCALE
         self.l_pb = 450*self.SCALE+20*self.SCALE
         self.width_pb = self.sp_pb - self.st_pb
-        self.pb_line = [[self.st_pb, self.h_pb],
-                        [self.st_pb, self.l_pb],
-                        [self.sp_pb, self.h_pb],
-                        [self.sp_pb, self.l_pb]]
+        self.pb_line = [[self.st_pb, self.h_pb], [self.st_pb, self.l_pb],
+                        [self.sp_pb, self.h_pb], [self.sp_pb, self.l_pb]]
 
         self.prog_box = np.array([self.st_pb, self.h_pb, 0, 40*self.SCALE])
         # refresh rate of the progression bar in milliseconds
@@ -93,11 +93,6 @@ class DataGest:
 
         # white empty box
         self.box_tx = [400*self.SCALE, 0, 800*self.SCALE, self.HEIGHT]
-
-        # Current Y position of the scrollbar thumb
-        self.fscroll = [1180*self.SCALE, 0, 20*self.SCALE, self.HEIGHT]
-        self.bscroll = [1181*self.SCALE, max([1, 3 * self.SCALE]),
-                          18*self.SCALE, 692 * self.SCALE]
 
         # --- Gestion de l'État ---
         self.state = 'IDLE'  # IDLE, LOADING, COMPUTING, ERROR, etc.
@@ -384,6 +379,11 @@ class DataGest:
             text=np.array(['Export db as json']),
             font=self.TEXT_FONT, lin_w=3,
             target='export_jsonf', bt_color=self.bt_color)]
+
+        self.scroller = Scroll_barr(
+            box=np.array([1180*self.SCALE, 0, 20*self.SCALE, self.HEIGHT]),
+            colors=[(255, 255, 255), self.bt_color, (0, 0, 0)],
+            lin_w=3)
 
         # Which tab to show
         self.pannel = 'DATA' # DATA, SETTINGS, EXECUTION
@@ -1344,5 +1344,3 @@ class DataGest:
                 break
 
         return stop
-
-
