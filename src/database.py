@@ -190,10 +190,10 @@ class DataGest:
             y_start=np.array([180, 230, 280]) * self.SCALE,
             y_stop =np.array([220, 270, 320]) * self.SCALE,
             text=np.array(['Perfect', 'Levenshtein', 'Damerau-Levenshtein',
-                           ]),
+                           'Heuristic']),
             font=self.TEXT_FONT, lin_w=3, target='algo',
             values=np.array(['Perfect', 'Levenshtein', 'DamerauLevenshtein'
-                             ]),
+                             'Heuristic']),
             empty_sel=None, colors=[(20, 250, 75), self.bt_color])]
 
         # Buttons list for the Matching algorithm
@@ -437,7 +437,7 @@ class DataGest:
          'no betbib':{'text':[
            'No Better-BibTex database was found from the given access path,',
            'make sure you writte the correct path in the "main.ini" file.',
-           'Given path:', str(self.from_path)],
+           'Given path:', str(self.to_path)],
           'y_center':y_centers},
 
          'no database':{'text':[
@@ -518,6 +518,11 @@ class DataGest:
         config.read('main.ini')
         self.from_path = Path(config['PATH'].get('DATA_PATH'))
         self.to_path = Path(config['PATH'].get('SAVE_PATH'))
+
+        # Dynamic update of error message content
+        self.error_messages['no file']['text'][3] = str(self.from_path)
+        self.error_messages['no betbib']['text'][3] = str(self.from_path)
+
         self.to_path.mkdir(parents=True, exist_ok=True)
         if os.path.isfile(self.from_path / 'zotero.sqlite'):
             shutil.copyfile(self.from_path / 'zotero.sqlite',
@@ -528,7 +533,6 @@ class DataGest:
                 shutil.copyfile(self.from_path / 'better-bibtex.sqlite',
                                 self.to_path   / 'better-bibtex.sqlite')
 
-
             elif os.path.isfile(self.from_path / 'better-bibtex.migrated'):
                 self.use_zotero_db = False
                 shutil.copyfile(self.from_path / 'better-bibtex.migrated',
@@ -536,6 +540,7 @@ class DataGest:
 
             else:
                 # if no better-bibtex db found => will use zotero db
+                # This behavior will be modified in the futur
                 self.use_zotero_db = True
 
         else:
@@ -1062,10 +1067,6 @@ class DataGest:
                         self.liste1.append(k1[l])
                     else:
                         self.liste1.append(' ')
-
-        self.liste1.append(' ')
-        self.liste2.append(' ')
-        self.light.append(color)
 
         return not color
 

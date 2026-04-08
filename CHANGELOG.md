@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.4] - 2026-04-09
+### Added
+- Remove extra lines beween authors.
+- Contributor Covenant Code of Conduct file: CODE_OF_CONDUCT.md.
+- Security Policy file: SECURITY.md.
+- Contributions file: CONTRIBUTING.md.
+- Bug in error path messages corrected.
+
 ## [0.4.3] - 2026-02-24
 ### Added
 - Scroll controls are now into a new and specific object in buttons.py.

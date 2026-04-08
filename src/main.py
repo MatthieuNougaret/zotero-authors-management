@@ -487,7 +487,7 @@ class Manager(DataGest):
 
         """
         tx_f = self.TITLE_FONT.render(text, 1, 'black')
-        self.window.blit(tx_f, (600 * self.SCALE-tx_f.get_width()/2,
+        self.window.blit(tx_f, (600*self.SCALE-tx_f.get_width()/2,
                                 center_y-tx_f.get_height()/2))
 
     def draw_error(self) -> None:
