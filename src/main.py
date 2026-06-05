@@ -6,12 +6,12 @@ from time import time
 from pathlib import Path
 from buttons import Button_selection, Button_keyboard
 
-# Object to manage the database from duplicate to interaction
-from database import DataGest
+# Object to manage the data from duplicate to matching
+from match import Matcher
 
 pygame.init()
 
-class Manager(DataGest):
+class Manager(Matcher):
     """
     Main GUI Manager for the Zotero authors application.
     Inherits from DataGest to handle backend data logic while managing
@@ -39,8 +39,10 @@ class Manager(DataGest):
         # Warm-Up for numba.njit acceleration
         warmup_1 = np.array(['a', 'b', 'c', 'd', 'e'])
         warmup_2 = np.array(['f', 'g', 'h', 'i', 'j'])
-        self.Levenshtein_distance_es(warmup_1, warmup_2)
-        self.Damerau_Levenshtein_distance_es(warmup_1, warmup_2)
+        self.Levenshtein_rel_dist_es(warmup_1, warmup_2)
+        self.Damerau_Levenshtein_rel_dist_es(warmup_1, warmup_2)
+        # self.Levenshtein_abs_dist_es(warmup_1, warmup_2, 1)
+        # self.Damerau_Levenshtein_abs_dist_es(warmup_1, warmup_2, 1)
 
     def reinit(self) -> None:
         """
@@ -107,13 +109,13 @@ class Manager(DataGest):
             if type(button) == Button_selection:
                 button.selected[:] = False
 
-        for button in self.levenshtein_bt:
+        for button in self.levenshtein_rel_bt:
             if type(button) == Button_selection:
                 button.selected[:] = False
             elif type(button) == Button_keyboard:
                 button.selected = False
 
-        for button in self.D_levenshtein_bt:
+        for button in self.D_levenshtein_rel_bt:
             if type(button) == Button_selection:
                 button.selected[:] = False
             elif type(button) == Button_keyboard:
@@ -155,12 +157,8 @@ class Manager(DataGest):
                 for button in self.matching_bt:
                     button.test_mouse(self.mouse_pos)
 
-            elif self.algo == 'Levenshtein':
-                for button in self.levenshtein_bt:
-                    button.test_mouse(self.mouse_pos)
-
-            elif self.algo == 'DamerauLevenshtein':
-                for button in self.D_levenshtein_bt:
+            elif self.algo in list(self.dists_bts.keys()):
+                for button in self.dists_bts[self.algo]:
                     button.test_mouse(self.mouse_pos)
 
         elif self.pannel == 'EXECUTION':
@@ -220,13 +218,8 @@ class Manager(DataGest):
             self.state = 'ERROR'
             self.error_type = 'no compar'
 
-        elif self.algo == 'Levenshtein':
-            for button in self.levenshtein_bt:
-                if type(button) == Button_keyboard:
-                    button.test_errors(self)
-
-        elif self.algo == 'DamerauLevenshtein':
-            for button in self.D_levenshtein_bt:
+        elif self.algo in list(self.dists_bts.keys()):
+            for button in self.dists_bts[self.algo]:
                 if type(button) == Button_keyboard:
                     button.test_errors(self)
 
@@ -240,13 +233,8 @@ class Manager(DataGest):
             self.state = 'COMPARING'
             self.m_text = False
             self.draw()
-            if self.algo == 'Levenshtein':
-                for button in self.levenshtein_bt:
-                    if type(button) == Button_keyboard:
-                        self.treshold = float(button.temp)
-
-            elif self.algo == 'DamerauLevenshtein':
-                for button in self.D_levenshtein_bt:
+            if self.algo in list(self.dists_bts.keys()):
+                for button in self.dists_bts[self.algo]:
                     if type(button) == Button_keyboard:
                         self.treshold = float(button.temp)
 
@@ -311,15 +299,8 @@ class Manager(DataGest):
                     for button in self.matching_bt:
                         button.actions(self)
 
-                elif self.algo == 'Levenshtein':
-                    for button in self.levenshtein_bt:
-                        if type(button) == Button_keyboard:
-                            button.actions_click()
-                        else:
-                            button.actions(self)
-
-                elif self.algo == 'DamerauLevenshtein':
-                    for button in self.D_levenshtein_bt:
+                elif self.algo in list(self.dists_bts.keys()):
+                    for button in self.dists_bts[self.algo]:
                         if type(button) == Button_keyboard:
                             button.actions_click()
                         else:
@@ -342,13 +323,8 @@ class Manager(DataGest):
         """
         if self.state == 'IDLE':
             if self.pannel == 'SETTINGS':
-                if self.algo == 'Levenshtein':
-                    for button in self.levenshtein_bt:
-                        if type(button) == Button_keyboard:
-                            button.actions_keyboard(event)
-
-                elif self.algo == 'DamerauLevenshtein':
-                    for button in self.D_levenshtein_bt:
+                if self.algo in list(self.dists_bts.keys()):
+                    for button in self.dists_bts[self.algo]:
                         if type(button) == Button_keyboard:
                             button.actions_keyboard(event)
 
@@ -377,14 +353,10 @@ class Manager(DataGest):
             for button in self.matching_bt:
                 button.draw(self.window)
 
-        elif self.algo == 'Levenshtein':
-            self.levenshtein_txt.draw(self.window)
-            for button in self.levenshtein_bt:
-                button.draw(self.window)
-
-        elif self.algo == 'DamerauLevenshtein':
-            self.dam_lev_txt.draw(self.window)
-            for button in self.D_levenshtein_bt:
+        elif self.algo in list(self.dists_bts.keys()):
+            self.dists_txts[self.algo].draw(self.window)
+            for button in self.dists_bts[self.algo]:
+                #if type(button) == Button_keyboard:
                 button.draw(self.window)
 
     def draw_execution_pannel(self) -> None:

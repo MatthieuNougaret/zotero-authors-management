@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.5] - 2026-05-06
+### Added
+- Split database.py into 3 files for readability: config.py for buttons and elements definitions, batabase.py which inherit all its attributes from config.py for the database management (locate, load and export) and match.py which inherit all its attributes from batabase.py for the matching logics. It constitute a chain of inheritences: config.py -> database.py -> match.py -> main.py (not modified).
+- Absolute distance function for Levenshtein and Damerau Levenshtein.
+- Bug fix in Levenshtein and Damerau-Levenshtein pre-computation.
+
 ## [0.4.4] - 2026-04-09
 ### Added
 - Remove extra lines beween authors.
